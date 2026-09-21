@@ -128,11 +128,13 @@ export default function Accounts() {
             {offset + 1}–{Math.min(offset + PAGE, total)} of {total.toLocaleString()}
           </span>
           <div style={{ display: "flex", gap: 6 }}>
-            <MiniButton onClick={() => setOffset((o) => Math.max(0, o - PAGE))}>
+            <MiniButton disabled={offset === 0}
+                        onClick={() => setOffset((o) => Math.max(0, o - PAGE))}>
               Previous
             </MiniButton>
-            <MiniButton onClick={() => setOffset((o) =>
-              (o + PAGE < total ? o + PAGE : o))}>
+            <MiniButton disabled={offset + PAGE >= total}
+                        onClick={() => setOffset((o) =>
+                          (o + PAGE < total ? o + PAGE : o))}>
               Next
             </MiniButton>
           </div>

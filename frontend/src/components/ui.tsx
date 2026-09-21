@@ -199,15 +199,19 @@ export function Table<T>({
 // Small pieces
 // --------------------------------------------------------------------------
 
-export function MiniButton({ children, onClick, active, title }: {
+export function MiniButton({ children, onClick, active, title, disabled }: {
   children: ReactNode; onClick?: () => void; active?: boolean; title?: string;
+  disabled?: boolean;
 }) {
   return (
-    <button type="button" onClick={onClick} title={title} style={{
+    <button type="button" onClick={disabled ? undefined : onClick} title={title}
+            disabled={disabled} style={{
       border: "1px solid var(--border)", background: active ? "var(--surface-2)" : "transparent",
       color: active ? "var(--text-primary)" : "var(--text-secondary)",
-      borderRadius: 6, padding: "3px 9px", fontSize: 11.5, cursor: "pointer",
-      fontWeight: active ? 600 : 500, whiteSpace: "nowrap",
+      borderRadius: 6, padding: "3px 9px", fontSize: 11.5,
+      cursor: disabled ? "not-allowed" : "pointer",
+      opacity: disabled ? .45 : 1, fontWeight: active ? 600 : 500,
+      whiteSpace: "nowrap",
     }}>{children}</button>
   );
 }
