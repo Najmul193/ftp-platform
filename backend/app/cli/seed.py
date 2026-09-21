@@ -1,0 +1,220 @@
+"""Seed reference data and the configuration matching FTP1.xlsm.
+
+Idempotent: safe to re-run. Run with
+
+    python -m app.cli.seed
+
+PLACEHOLDERS -- these are open items Q1/Q2 in the plan and must be replaced with
+the bank's real values before UAT:
+
+* Division and district names/codes are invented. The workbook carries no
+  organisation data, only branch codes 101-105.
+* Branch categories are spread across all four values so that category analysis
+  is exercised end to end. The real mapping is unknown.
+"""
+
+from __future__ import annotations
+
+import csv
+from datetime import date
+from decimal import Decimal
+from pathlib import Path
+
+from sqlalchemy import select
+
+from app.core.db import session_scope
+from app.core.permissions import PERMISSIONS, ROLES
+from app.core.security import hash_password
+from app.domain.types import BranchCategory, LiabilityNature, ScopeLevel, Side
+from app.models import (
+    Branch, ColumnMappingProfile, District, Division, GlobalRateConfig,
+    Permission, Product, ProductRateConfig, Role, RolePermission, SourceSystem,
+    SystemSetting, User, UserRole,
+)
+
+EFFECTIVE_FROM = date(2026, 1, 1)
+
+#: The branch mapping lives in an editable CSV rather than in code, so the bank
+#: can drop in its real hierarchy without a deployment. Comment lines start "#".
+BRANCH_MAPPING_CSV = Path(__file__).resolve().parents[2] / "data" / "branch_mapping.csv"
+
+
+def load_branch_mapping(path: Path = BRANCH_MAPPING_CSV) -> list[dict[str, str]]:
+    """Read the mapping, skipping comment lines."""
+    if not path.exists():
+        raise FileNotFoundError(f"branch mapping not found at {path}")
+    with path.open() as f:
+        lines = [ln for ln in f if not ln.lstrip().startswith("#")]
+    return list(csv.DictReader(lines))
+
+# Product codes are exactly the strings the bank feed carries.
+PRODUCTS = [
+    ("SBSTU",     "SB Staff",        Side.LIABILITY, LiabilityNature.DEMAND, "5.50",
+     "Savings Bank account for staff."),
+    ("CANOR",     "Current Normal",  Side.LIABILITY, LiabilityNature.DEMAND, "2.00",
+     "Current account, non-interest-bearing. ROI is legitimately 0."),
+    ("FD 1 year", "FD 1 Year",       Side.LIABILITY, LiabilityNature.TIME,   "8.80",
+     "Fixed deposit, one-year tenor."),
+    ("HMLON 5 y", "Home Loan 5Y",    Side.ASSET,     None,                   "9.00",
+     "Home loan, five-year tenor."),
+    ("CC",        "Cash Credit",     Side.ASSET,     None,                   "7.60",
+     "Cash credit working-capital facility."),
+]
+
+
+def _get_or_create(s, model, defaults=None, **lookup):
+    obj = s.scalar(select(model).filter_by(**lookup))
+    if obj:
+        return obj, False
+    obj = model(**lookup, **(defaults or {}))
+    s.add(obj)
+    s.flush()
+    return obj, True
+
+
+def seed() -> None:
+    with session_scope() as s:
+        # --- permissions and roles ------------------------------------- #
+        perms: dict[str, Permission] = {}
+        for code, (module, desc) in PERMISSIONS.items():
+            perms[code], _ = _get_or_create(
+                s, Permission, {"module": module, "description": desc}, code=code
+            )
+
+        for code, spec in ROLES.items():
+            role, _ = _get_or_create(
+                s, Role,
+                {"name": spec["name"], "description": spec.get("description"),
+                 "is_admin": spec.get("is_admin", False)},
+                code=code,
+            )
+            existing = {
+                rp.permission_id
+                for rp in s.scalars(select(RolePermission).filter_by(role_id=role.id))
+            }
+            for pcode in spec["permissions"]:
+                pid = perms[pcode].id
+                if pid not in existing:
+                    s.add(RolePermission(role_id=role.id, permission_id=pid))
+
+        # --- organisation, driven by the editable CSV --------------------- #
+        mapping = load_branch_mapping()
+
+        divs: dict[str, Division] = {}
+        dists: dict[str, District] = {}
+
+        for row in mapping:
+            dv = row["division_code"].strip()
+            if dv not in divs:
+                divs[dv], _ = _get_or_create(
+                    s, Division, {"name": row["division_name"].strip()}, code=dv
+                )
+
+        for row in mapping:
+            dt = row["district_code"].strip()
+            if dt not in dists:
+                dists[dt], _ = _get_or_create(
+                    s, District,
+                    {"name": row["district_name"].strip(),
+                     "division_id": divs[row["division_code"].strip()].id},
+                    code=dt,
+                )
+
+        for row in mapping:
+            opened = row.get("opened_on", "").strip()
+            _get_or_create(
+                s, Branch,
+                {"branch_name": row["branch_name"].strip(),
+                 "district_id": dists[row["district_code"].strip()].id,
+                 "category": BranchCategory(row["category"].strip()),
+                 "opened_on": date.fromisoformat(opened) if opened else None},
+                branch_code=row["branch_code"].strip(),
+            )
+
+        # --- products ------------------------------------------------------ #
+        products = {}
+        for code, short, side, nature, _bm, details in PRODUCTS:
+            products[code], _ = _get_or_create(
+                s, Product,
+                {"short_name": short, "side": side, "liability_nature": nature,
+                 "details": details},
+                product_code=code,
+            )
+
+        # --- rate configuration -------------------------------------------- #
+        # benchmark_rate is deliberately NULL. A product without an override is
+        # then a hard ConfigMissingError rather than a silent zero -- the fix
+        # for the workbook's most dangerous defect.
+        if not s.scalar(select(GlobalRateConfig).filter_by(version=1)):
+            s.add(GlobalRateConfig(
+                version=1,
+                benchmark_rate=None,
+                liquidity_cost=Decimal("0.30"),
+                other_cost=Decimal("0.05"),
+                effective_from=EFFECTIVE_FROM,
+                status="APPROVED",
+                note="Seeded from FTP1.xlsm: liquidity and other cost were "
+                     "uniform across all five products.",
+            ))
+
+        for code, _short, _side, _nature, benchmark, _details in PRODUCTS:
+            pid = products[code].id
+            if not s.scalar(select(ProductRateConfig).filter_by(product_id=pid, version=1)):
+                s.add(ProductRateConfig(
+                    product_id=pid,
+                    version=1,
+                    benchmark_rate=Decimal(benchmark),
+                    liquidity_cost=None,     # inherit
+                    other_cost=None,         # inherit
+                    effective_from=EFFECTIVE_FROM,
+                    status="APPROVED",
+                    note="Seeded from FTP1.xlsm product benchmark.",
+                ))
+
+        # --- ingestion configuration ---------------------------------------- #
+        src, _ = _get_or_create(
+            s, SourceSystem,
+            {"name": "Excel Upload", "adapter_type": "EXCEL"},
+            code="EXCEL_UPLOAD",
+        )
+        _get_or_create(
+            s, ColumnMappingProfile,
+            {"source_system_id": src.id,
+             "mapping": {"profile": "LEGACY_WORKBOOK_MAPPING"}},
+            name="Legacy FTP Workbook (FTP1.xlsm)", version=1,
+        )
+
+        # --- operational settings --------------------------------------------- #
+        for key, value, desc in [
+            ("roi_band", {"min": "0", "max": "25"}, "V012 warning band for ROI"),
+            ("interest_tolerance",
+             {"absolute_floor": "0.01", "relative_bps": "1"},
+             "V013 reconciliation tolerance"),
+            ("balance_change_pct", {"value": "50"}, "V016 day-on-day move threshold"),
+            ("branch_count_tolerance_pct", {"value": "10"}, "V017 row-count threshold"),
+        ]:
+            _get_or_create(s, SystemSetting, {"value": value, "description": desc}, key=key)
+
+        # --- bootstrap HO administrator ---------------------------------------- #
+        admin = s.scalar(select(User).filter_by(username="admin"))
+        if not admin:
+            admin = User(
+                username="admin",
+                full_name="HO Administrator",
+                email="admin@bank.local",
+                password_hash=hash_password("ChangeMe!2026"),
+                scope_level=ScopeLevel.HO,
+                scope_id=None,
+                must_change_password=True,
+            )
+            s.add(admin)
+            s.flush()
+            for rcode in ("ADMIN", "FTP_MANAGER", "DATA_OPERATOR", "ANALYST"):
+                role = s.scalar(select(Role).filter_by(code=rcode))
+                s.add(UserRole(user_id=admin.id, role_id=role.id))
+
+    print("seed complete")
+
+
+if __name__ == "__main__":
+    seed()
