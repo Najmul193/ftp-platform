@@ -109,6 +109,13 @@ export const api = {
   leakage: (f: Filters) => request<Leakage>(`/analytics/leakage${qs(f)}`),
   scatter: (f: Filters, by: Dim) => request<Scatter>(`/analytics/scatter${qs(f, { by })}`),
   balanceSheet: (f: Filters) => request<BalanceSheet>(`/analytics/balance-sheet${qs(f)}`),
+  headlinePerformers: (f: Filters) =>
+    request<HeadlinePerformers>(`/analytics/headline-performers${qs(f)}`),
+  leaderboard: (f: Filters, group: Dim, of: Dim, top = 3, metric: "profit" | "yield" = "profit") =>
+    request<Leaderboard>(`/analytics/leaderboard${qs(f, { group, of, top, metric })}`),
+  productLeadership: (f: Filters, area: Dim) =>
+    request<ProductLeadership>(`/analytics/product-leadership${qs(f, { area })}`),
+  dataVersion: () => request<DataVersion>("/system/data-version"),
 
   // --- master -------------------------------------------------------------
   branches: (includeInactive = false) =>
@@ -337,4 +344,64 @@ export interface ExceptionRow {
   source_row_no: number | null; origin: string | null; severity: string;
   rule_code: string; field_name: string | null; raw_value: string | null;
   message: string;
+}
+
+export interface Performer {
+  key: string | number; label: string; net_ftp_profit: Num; total_balance: Num;
+  yield_pct: Num; account_count: number; negative_ftp_count: number;
+  share_pct?: Num;
+}
+export interface DimPerformers {
+  count: number;
+  top_by_profit: Performer & { share_pct: Num };
+  bottom_by_profit: Performer;
+  top_by_yield: Performer;
+  bottom_by_yield: Performer;
+  profit_yield_diverge: boolean;
+}
+export type HeadlinePerformers = Partial<Record<Dim, DimPerformers | null>>;
+
+export interface LeaderEntry {
+  rank: number; label: string; net_ftp_profit: Num; total_balance: Num;
+  yield_pct: Num; account_count: number; share_of_group_pct: Num;
+}
+export interface Leaderboard {
+  available: boolean; reason?: string; group?: Dim; of?: Dim;
+  metric?: string; top: number;
+  groups: {
+    group_key: string | number; group_label: string;
+    group_net_ftp_profit: Num; member_count: number;
+    leader: LeaderEntry | null;
+    laggard: { label: string; net_ftp_profit: Num; yield_pct: Num } | null;
+    entries: LeaderEntry[];
+  }[];
+}
+
+export interface ProductLeadership {
+  available: boolean; reason?: string; area?: Dim;
+  area_count: number; product_count: number;
+  wins_by_product: { product_code: string; product_name: string; areas_won: number }[];
+  areas: {
+    area_key: string | number; area_label: string; area_net_ftp_profit: Num;
+    winner: { product_code: string; product_name: string; net_ftp_profit: Num;
+      yield_pct: Num; total_balance: Num };
+    dominance_pct: Num;
+    runner_up: { product_code: string; net_ftp_profit: Num } | null;
+    margin_over_runner_up: Num | null;
+    products_present: number;
+    breakdown: { product_code: string; net_ftp_profit: Num;
+      yield_pct: Num; share_pct: Num }[];
+  }[];
+}
+
+export interface DataVersion {
+  version: string;
+  last_run_id: number | null;
+  last_run_ref: string | null;
+  last_run_at: string | null;
+  last_batch_ref: string | null;
+  last_batch_status: string | null;
+  last_batch_at: string | null;
+  latest_business_date: string | null;
+  server_time: string;
 }

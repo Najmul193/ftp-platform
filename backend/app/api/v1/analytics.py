@@ -103,3 +103,38 @@ def scatter(db: DbDep, scope: ScopeDep, f: FiltersDep, by: Dim = "branch"):
 def balance_sheet(db: DbDep, scope: ScopeDep, f: FiltersDep):
     """Asset and liability structure, funding gap and FTP spread."""
     return AnalyticsRepo(db, scope).balance_sheet_structure(f)
+
+
+@router.get("/headline-performers", dependencies=[_view])
+def headline_performers(db: DbDep, scope: ScopeDep, f: FiltersDep):
+    """Best and worst on every dimension at once.
+
+    Reports the profit leader and the yield leader separately, because they are
+    frequently different segments -- a large book priced thinly tops profit
+    while earning a poor spread.
+    """
+    return AnalyticsRepo(db, scope).headline_performers(f)
+
+
+@router.get("/leaderboard", dependencies=[_view])
+def leaderboard(
+    db: DbDep, scope: ScopeDep, f: FiltersDep,
+    group: Dim = "division",
+    of: Dim = "branch",
+    top: int = Query(3, ge=1, le=20),
+    metric: Literal["profit", "yield"] = "profit",
+):
+    """Top performers of one dimension within each group of another.
+
+    For example `group=division&of=branch` gives the best branches in each
+    division; `group=category&of=product` gives the best products in each
+    branch category.
+    """
+    return AnalyticsRepo(db, scope).leaderboard(f, group=group, of=of, top=top, metric=metric)
+
+
+@router.get("/product-leadership", dependencies=[_view])
+def product_leadership(db: DbDep, scope: ScopeDep, f: FiltersDep,
+                       area: Dim = "district"):
+    """Which product leads in each area, its dominance, and its margin."""
+    return AnalyticsRepo(db, scope).product_leadership(f, area=area)

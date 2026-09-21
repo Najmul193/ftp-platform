@@ -24,6 +24,7 @@ exactly SUM(b*rate).
 from __future__ import annotations
 
 import math
+from collections import defaultdict
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from decimal import Decimal
@@ -886,3 +887,289 @@ class AnalyticsRepo:
         if not scope.unrestricted:
             conds.append(F.branch_id.in_(scope.branch_ids or [-1]))
         return and_(*conds)
+
+    # ------------------------------------------------------------------ #
+    # 13. Leaderboards -- top performers, and who leads where
+    # ------------------------------------------------------------------ #
+
+    #: How each dimension is addressed on the branch x product grain, which is
+    #: the only aggregate carrying both the hierarchy and the product.
+    _BP_DIMS = {
+        "branch": ("branch_id", "branch_code"),
+        "product": ("product_id", "product_code"),
+        "division": ("division_id", "division_id"),
+        "district": ("district_id", "district_id"),
+        "category": ("branch_category", "branch_category"),
+    }
+
+    def _bp_key(self, dim: Dimension):
+        m = AggDailyBranchProduct
+        id_col, label_col = self._BP_DIMS[dim]
+        return getattr(m, id_col), getattr(m, label_col)
+
+    def _label_maps(self) -> dict[str, dict[Any, str]]:
+        """Readable names for id-keyed dimensions, resolved once per request."""
+        from app.models import Branch, District, Division, Product
+        return {
+            "division": {d.id: d.name for d in self.s.scalars(select(Division))},
+            "district": {d.id: d.name for d in self.s.scalars(select(District))},
+            "branch": {b.branch_code: f"{b.branch_code} {b.branch_name}"
+                       for b in self.s.scalars(select(Branch))},
+            "product": {p.product_code: p.short_name
+                        for p in self.s.scalars(select(Product))},
+        }
+
+    def _bp_rollup(self, f: Filters, dims: list[Dimension]) -> list[dict]:
+        """Group the branch x product grain by one or two dimensions."""
+        from app.repositories.dashboard import _sums
+
+        m = AggDailyBranchProduct
+        keys = []
+        for d in dims:
+            id_col, label_col = self._bp_key(d)
+            keys.append(id_col)
+            if label_col is not id_col:
+                keys.append(label_col)
+
+        stmt = _apply_filters(
+            _apply_scope(select(*keys, *_sums(m)), m, self.dash._scope_for(f)), m, f,
+        ).group_by(*keys)
+
+        out = []
+        for r in self.s.execute(stmt):
+            row: dict[str, Any] = {
+                "net_ftp_profit": _d(r.net_ftp_profit),
+                "total_balance": _d(r.total_balance),
+                "ftp_rate_x_balance": _d(r.ftp_rate_x_balance),
+                "asset_ftp_profit": _d(r.asset_ftp_profit),
+                "liability_ftp_profit": _d(r.liability_ftp_profit),
+                "account_count": r.account_count or 0,
+                "negative_ftp_count": r.negative_ftp_count or 0,
+            }
+            i = 0
+            for d in dims:
+                id_col, label_col = self._bp_key(d)
+                raw = r[i]; i += 1
+                if label_col is not id_col:
+                    raw_label = r[i]; i += 1
+                else:
+                    raw_label = raw
+                row[f"{d}_key"] = raw.value if hasattr(raw, "value") else raw
+                row[f"{d}_label"] = (
+                    raw_label.value if hasattr(raw_label, "value") else raw_label
+                )
+            out.append(row)
+        return out
+
+    @staticmethod
+    def _yield_of(row: dict) -> Decimal:
+        bal = row["total_balance"]
+        return (row["ftp_rate_x_balance"] / bal).quantize(RATE_Q) if bal else ZERO
+
+    def headline_performers(self, f: Filters) -> dict[str, Any]:
+        """Best and worst on every dimension at once, for the dashboard header.
+
+        Both *profit* and *yield* leaders are reported, because they are often
+        different segments and conflating them is how a large, thinly-priced
+        book gets mistaken for a good one.
+        """
+        names = self._label_maps()
+        out: dict[str, Any] = {}
+
+        for dim in ("branch", "product", "division", "district", "category"):
+            rows = self._bp_rollup(f, [dim])  # type: ignore[list-item]
+            if not rows:
+                out[dim] = None
+                continue
+
+            def decorate(r: dict) -> dict:
+                key = r[f"{dim}_key"]
+                label = names.get(dim, {}).get(
+                    r[f"{dim}_label"], str(r[f"{dim}_label"])
+                )
+                if dim == "category":
+                    label = str(r[f"{dim}_label"]).replace("_", " ").title()
+                return {
+                    "key": key, "label": label,
+                    "net_ftp_profit": r["net_ftp_profit"].quantize(MONEY_Q),
+                    "total_balance": r["total_balance"].quantize(MONEY_Q),
+                    "yield_pct": self._yield_of(r),
+                    "account_count": r["account_count"],
+                    "negative_ftp_count": r["negative_ftp_count"],
+                }
+
+            by_profit = sorted(rows, key=lambda r: r["net_ftp_profit"], reverse=True)
+            by_yield = sorted(rows, key=self._yield_of, reverse=True)
+            total = sum(r["net_ftp_profit"] for r in rows) or Decimal(1)
+
+            top = decorate(by_profit[0])
+            top["share_pct"] = (top["net_ftp_profit"] / total * 100).quantize(RATE_Q)
+
+            out[dim] = {
+                "count": len(rows),
+                "top_by_profit": top,
+                "bottom_by_profit": decorate(by_profit[-1]),
+                "top_by_yield": decorate(by_yield[0]),
+                "bottom_by_yield": decorate(by_yield[-1]),
+                #: True when the profit leader is not the yield leader -- the
+                #: case worth flagging, because size is masking thin pricing.
+                "profit_yield_diverge": (
+                    by_profit[0].get(f"{dim}_key") != by_yield[0].get(f"{dim}_key")
+                ),
+            }
+        return out
+
+    def leaderboard(self, f: Filters, *, group: Dimension, of: Dimension,
+                    top: int = 3, metric: str = "profit") -> dict[str, Any]:
+        """Top `of` within each `group` -- e.g. the best branch in each division.
+
+        Ranking on `yield` rather than `profit` answers a different question:
+        not "who earns most" but "who prices best", which is the fairer
+        comparison when the groups differ in size.
+        """
+        if group == of:
+            return {"available": False,
+                    "reason": "group and ranked dimension must differ"}
+
+        names = self._label_maps()
+        rows = self._bp_rollup(f, [group, of])
+        if not rows:
+            return {"available": False, "reason": "no data in this slice", "groups": []}
+
+        def label_for(dim: Dimension, r: dict) -> str:
+            raw = r[f"{dim}_label"]
+            if dim == "category":
+                return str(raw).replace("_", " ").title()
+            return names.get(dim, {}).get(raw, str(raw))
+
+        buckets: dict[Any, list[dict]] = defaultdict(list)
+        for r in rows:
+            buckets[r[f"{group}_key"]].append(r)
+
+        key_fn = (lambda r: r["net_ftp_profit"]) if metric == "profit" else self._yield_of
+
+        groups = []
+        for gkey, members in buckets.items():
+            ranked = sorted(members, key=key_fn, reverse=True)
+            gtotal = sum(m["net_ftp_profit"] for m in members) or Decimal(1)
+            entries = []
+            for i, m in enumerate(ranked[:top], start=1):
+                entries.append({
+                    "rank": i,
+                    "label": label_for(of, m),
+                    "net_ftp_profit": m["net_ftp_profit"].quantize(MONEY_Q),
+                    "total_balance": m["total_balance"].quantize(MONEY_Q),
+                    "yield_pct": self._yield_of(m),
+                    "account_count": m["account_count"],
+                    "share_of_group_pct": (
+                        m["net_ftp_profit"] / gtotal * 100
+                    ).quantize(RATE_Q),
+                })
+            groups.append({
+                "group_key": gkey,
+                "group_label": label_for(group, members[0]),
+                "group_net_ftp_profit": sum(
+                    (m["net_ftp_profit"] for m in members), ZERO
+                ).quantize(MONEY_Q),
+                "member_count": len(members),
+                "leader": entries[0] if entries else None,
+                "laggard": {
+                    "label": label_for(of, ranked[-1]),
+                    "net_ftp_profit": ranked[-1]["net_ftp_profit"].quantize(MONEY_Q),
+                    "yield_pct": self._yield_of(ranked[-1]),
+                } if ranked else None,
+                "entries": entries,
+            })
+
+        groups.sort(key=lambda g: g["group_net_ftp_profit"], reverse=True)
+        return {
+            "available": True, "group": group, "of": of, "metric": metric,
+            "top": top, "groups": groups,
+        }
+
+    def product_leadership(self, f: Filters, *, area: Dimension = "district") -> dict[str, Any]:
+        """Which product leads in each area, and by how much.
+
+        `dominance` is the winner's share of that area's profit, and `margin` is
+        how far ahead of the runner-up it sits. A high share with a thin margin
+        is a different situation from a high share with a wide one, and the
+        pair says which.
+        """
+        if area == "product":
+            return {"available": False, "reason": "area cannot be product"}
+
+        names = self._label_maps()
+        rows = self._bp_rollup(f, [area, "product"])
+        if not rows:
+            return {"available": False, "reason": "no data in this slice", "areas": []}
+
+        buckets: dict[Any, list[dict]] = defaultdict(list)
+        for r in rows:
+            buckets[r[f"{area}_key"]].append(r)
+
+        def area_label(r: dict) -> str:
+            raw = r[f"{area}_label"]
+            if area == "category":
+                return str(raw).replace("_", " ").title()
+            return names.get(area, {}).get(raw, str(raw))
+
+        areas = []
+        all_products: set[str] = set()
+        for members in buckets.values():
+            ranked = sorted(members, key=lambda m: m["net_ftp_profit"], reverse=True)
+            total = sum(m["net_ftp_profit"] for m in members) or Decimal(1)
+            win, second = ranked[0], (ranked[1] if len(ranked) > 1 else None)
+            all_products.update(str(m["product_label"]) for m in members)
+
+            areas.append({
+                "area_key": ranked[0][f"{area}_key"],
+                "area_label": area_label(ranked[0]),
+                "area_net_ftp_profit": sum((m["net_ftp_profit"] for m in members),
+                                           ZERO).quantize(MONEY_Q),
+                "winner": {
+                    "product_code": str(win["product_label"]),
+                    "product_name": names["product"].get(
+                        str(win["product_label"]), str(win["product_label"])),
+                    "net_ftp_profit": win["net_ftp_profit"].quantize(MONEY_Q),
+                    "yield_pct": self._yield_of(win),
+                    "total_balance": win["total_balance"].quantize(MONEY_Q),
+                },
+                "dominance_pct": (win["net_ftp_profit"] / total * 100).quantize(RATE_Q),
+                "runner_up": {
+                    "product_code": str(second["product_label"]),
+                    "net_ftp_profit": second["net_ftp_profit"].quantize(MONEY_Q),
+                } if second else None,
+                "margin_over_runner_up": (
+                    (win["net_ftp_profit"] - second["net_ftp_profit"]).quantize(MONEY_Q)
+                    if second else None
+                ),
+                "products_present": len(members),
+                "breakdown": [
+                    {"product_code": str(m["product_label"]),
+                     "net_ftp_profit": m["net_ftp_profit"].quantize(MONEY_Q),
+                     "yield_pct": self._yield_of(m),
+                     "share_pct": (m["net_ftp_profit"] / total * 100).quantize(RATE_Q)}
+                    for m in ranked
+                ],
+            })
+
+        areas.sort(key=lambda a: a["area_net_ftp_profit"], reverse=True)
+        wins: dict[str, int] = defaultdict(int)
+        for a in areas:
+            wins[a["winner"]["product_code"]] += 1
+
+        return {
+            "available": True,
+            "area": area,
+            "area_count": len(areas),
+            "product_count": len(all_products),
+            #: How many areas each product wins -- one product taking every area
+            #: is a very different book from five products splitting them.
+            "wins_by_product": sorted(
+                ({"product_code": k,
+                  "product_name": names["product"].get(k, k),
+                  "areas_won": v} for k, v in wins.items()),
+                key=lambda x: x["areas_won"], reverse=True,
+            ),
+            "areas": areas,
+        }

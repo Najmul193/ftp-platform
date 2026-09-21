@@ -1,7 +1,7 @@
 import {
   createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState,
 } from "react";
-import { api, Branch, Filters, Me, Node_, Product, setToken } from "./api";
+import { api, Branch, DataVersion, Filters, Me, Node_, Product, setToken } from "./api";
 
 interface Ctx {
   me: Me | null;
@@ -22,6 +22,13 @@ interface Ctx {
 
   theme: "light" | "dark";
   toggleTheme: () => void;
+
+  /** Bumps whenever the server's data fingerprint moves. Every data hook
+   *  depends on it, so an upload made anywhere refreshes every open view. */
+  dataVersion: number;
+  dataInfo: DataVersion | null;
+  refreshData: () => void;
+  lastSync: Date | null;
 }
 
 const C = createContext<Ctx>(null!);
@@ -72,6 +79,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [divisions, setDivisions] = useState<Node_[]>([]);
   const [districts, setDistricts] = useState<Node_[]>([]);
+  const [dataVersion, setDataVersion] = useState(0);
+  const [dataInfo, setDataInfo] = useState<DataVersion | null>(null);
+  const [lastSync, setLastSync] = useState<Date | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">(
     () => (localStorage.getItem("ftp_theme") as "light" | "dark") ??
           (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"),
@@ -103,6 +113,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
     })();
   }, [refreshMasters]);
 
+  /** Poll the fingerprint rather than the data: it is a few scalar lookups, so
+   *  it stays cheap at any volume, and only a real change costs a refetch.
+   *  Polling pauses while the tab is hidden and catches up on focus. */
+  useEffect(() => {
+    if (!me) return;
+    let stop = false;
+    let seen: string | null = null;
+
+    const check = async () => {
+      if (document.hidden || stop) return;
+      try {
+        const v = await api.dataVersion();
+        setDataInfo(v);
+        setLastSync(new Date());
+        if (seen !== null && v.version !== seen) setDataVersion((n) => n + 1);
+        seen = v.version;
+      } catch { /* a failed poll is not worth surfacing; the next one retries */ }
+    };
+
+    check();
+    const id = setInterval(check, 15_000);
+    const onFocus = () => check();
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      stop = true;
+      clearInterval(id);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
+  }, [me]);
+
   const setFilters = useCallback((f: Filters | ((p: Filters) => Filters)) => {
     setFiltersRaw((prev) => {
       const next = typeof f === "function" ? f(prev) : f;
@@ -126,15 +168,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
     resetFilters: () => setFilters({}),
     branches, products, divisions, districts, refreshMasters,
     theme, toggleTheme: () => setTheme((t) => (t === "dark" ? "light" : "dark")),
+    dataVersion, dataInfo, lastSync,
+    // Called straight after an upload so the page updates without waiting for
+    // the next poll tick.
+    refreshData: () => setDataVersion((n) => n + 1),
   }), [me, ready, filters, setFilters, branches, products, divisions, districts,
-       theme, refreshMasters]);
+       theme, refreshMasters, dataVersion, dataInfo, lastSync]);
 
   return <C.Provider value={value}>{children}</C.Provider>;
 }
 
 /** Tiny async hook: keeps the previous value visible while refetching, so the
- *  page dims rather than flashing a skeleton. */
+ *  page dims rather than flashing a skeleton.
+ *
+ *  `dataVersion` is folded into the dependency list here rather than at every
+ *  call site, so no view can forget to be reactive to new data. */
 export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]) {
+  const { dataVersion } = useApp();
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -148,7 +198,7 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]) {
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
+  }, [...deps, dataVersion]);
 
   return { data, loading, error };
 }
