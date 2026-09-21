@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import shutil
 from datetime import date
+from typing import Literal
 from pathlib import Path
 
 from fastapi import (
-    APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status,
+    APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile,
+    status,
 )
 from sqlalchemy import select
 
@@ -17,7 +19,8 @@ from app.core.config import settings
 from app.ingestion.adapters.excel import ExcelAdapter
 from app.ingestion.mapping import LEGACY_WORKBOOK_MAPPING
 from app.models import UploadBatch, UploadException
-from app.services.pipeline import PipelineError, UploadPipeline
+from app.services.pipeline import PipelineError, UploadMode, UploadPipeline
+from app.services.rejects import build_rejects_workbook
 
 router = APIRouter(prefix="/uploads", tags=["uploads"])
 
@@ -75,6 +78,8 @@ def probe(file: UploadFile = File(...)):
         "header_issues": result.header_issues,
         "business_dates": [d.isoformat() for d in result.business_dates],
         "total_data_rows": result.total_data_rows,
+        "looks_like_rejects_export": result.looks_like_rejects_export,
+        "suggested_mode": "merge" if result.looks_like_rejects_export else "replace",
         "sheets": [
             {"name": s.name,
              "business_date": s.business_date.isoformat() if s.business_date else None,
@@ -93,6 +98,7 @@ def upload(
     business_date: date | None = Form(None),
     sheet_name: str | None = Form(None),
     auto_commit: bool = Form(True),
+    mode: Literal["replace", "merge"] = Form("replace"),
 ):
     """Ingest a file end to end.
 
@@ -103,13 +109,21 @@ def upload(
     * a multi-sheet workbook plus `sheet_name`;
     * a full historical backfill, with neither, which loads every date-named
       sheet using its own name as the date.
+
+    `mode` decides what happens to data already loaded for the same date:
+
+    * `replace` (default) -- the bank resent the day, so anything absent from
+      the new file is gone.
+    * `merge` -- a completion file, typically the rejected-rows workbook sent
+      back once the missing branch or product was registered. Only the accounts
+      present in the file are superseded; the rest of the day stays.
     """
     path = _store(file)
     pipe = UploadPipeline(db, actor_id=user.id, actor_username=user.username)
     try:
         result = pipe.run(
             path, business_date=business_date, sheet_name=sheet_name,
-            auto_commit=auto_commit,
+            auto_commit=auto_commit, mode=UploadMode(mode),
         )
     except PipelineError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
@@ -160,3 +174,32 @@ def batch_exceptions(batch_ref: str, db: DbDep, severity: str | None = None,
     if severity:
         stmt = stmt.where(UploadException.severity == severity)
     return list(db.scalars(stmt))
+
+
+@router.get("/{batch_ref}/rejects.xlsx",
+            dependencies=[Depends(require("UPLOAD_VIEW"))])
+def download_rejects(batch_ref: str, db: DbDep):
+    """Download the rows this batch could not accept, as a re-uploadable workbook.
+
+    The file keeps the bank's original column layout and appends the reason, so
+    once the missing branch or product is registered the same file goes straight
+    back in. A rejection the operator cannot hand back is one they would have to
+    reconstruct by hand.
+    """
+    batch = db.scalar(select(UploadBatch).filter_by(batch_ref=batch_ref))
+    if batch is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"no batch {batch_ref}")
+
+    content, count = build_rejects_workbook(db, batch)
+    if not count:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            f"batch {batch_ref} has no rejected rows",
+        )
+
+    name = f"rejected-{batch.business_date or 'rows'}-{batch.batch_ref}.xlsx"
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )

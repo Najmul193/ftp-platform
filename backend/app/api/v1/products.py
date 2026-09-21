@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from app.api.deps import DbDep, require
+from app.api.deps import DbDep, UserDep, require
 from app.api.schemas import ProductOut, ProductRatesOut
 from app.domain.errors import ConfigMissingError
+from app.domain.types import LiabilityNature, Side
 from app.models import Product
 from app.repositories.rates import RateBook
+from app.services.products import ProductError, ProductInUse, ProductService
 
 router = APIRouter(prefix="/products", tags=["products"])
 
@@ -50,3 +54,88 @@ def effective_rates(product_code: str, db: DbDep, on: date | None = None):
         other_source=resolved.other.source.value,
         effective_on=on,
     )
+
+
+class ProductCreate(BaseModel):
+    product_code: str = Field(min_length=1, max_length=40)
+    short_name: str = Field(min_length=1, max_length=60)
+    side: Side
+    benchmark_rate: Decimal | None = None
+    liability_nature: LiabilityNature | None = None
+    details: str | None = None
+    liquidity_cost: Decimal | None = None
+    other_cost: Decimal | None = None
+    effective_from: date | None = None
+
+
+class ProductUpdate(BaseModel):
+    short_name: str | None = None
+    details: str | None = None
+    liability_nature: LiabilityNature | None = None
+    is_active: bool | None = None
+
+
+class RateUpdate(BaseModel):
+    benchmark_rate: Decimal
+    liquidity_cost: Decimal | None = None
+    other_cost: Decimal | None = None
+    effective_from: date | None = None
+
+
+def _svc(db, user: UserDep) -> ProductService:
+    return ProductService(db, actor_id=user.id, actor_username=user.username)
+
+
+@router.post("", response_model=ProductOut, status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(require("MASTER_PRODUCT_EDIT"))])
+def create_product(body: ProductCreate, db: DbDep, user: UserDep):
+    """Register a product, with the benchmark that makes it priceable.
+
+    Supplying the benchmark here matters: a product that exists but has no
+    resolvable rate passes the "product exists" check and then fails on rate
+    resolution, which presents as an unrelated problem.
+    """
+    try:
+        return _svc(db, user).create(**body.model_dump())
+    except ProductError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+
+@router.patch("/{product_code}", response_model=ProductOut,
+              dependencies=[Depends(require("MASTER_PRODUCT_EDIT"))])
+def update_product(product_code: str, body: ProductUpdate, db: DbDep, user: UserDep):
+    changes = body.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "no changes supplied")
+    try:
+        return _svc(db, user).update(product_code, **changes)
+    except ProductError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+
+@router.post("/{product_code}/rates",
+             dependencies=[Depends(require("CONFIG_RATE_EDIT"))])
+def set_product_rate(product_code: str, body: RateUpdate, db: DbDep, user: UserDep):
+    """Add a new effective-dated rate version, closing the open one."""
+    try:
+        cfg = _svc(db, user).set_rate(product_code, **body.model_dump())
+    except ProductError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    return {"product_code": product_code, "version": cfg.version,
+            "benchmark_rate": cfg.benchmark_rate,
+            "effective_from": cfg.effective_from}
+
+
+@router.delete("/{product_code}",
+               dependencies=[Depends(require("MASTER_PRODUCT_EDIT"))])
+def delete_product(product_code: str, db: DbDep, user: UserDep):
+    """Remove a product that has no history; otherwise 409 with the counts."""
+    try:
+        return _svc(db, user).delete(product_code)
+    except ProductInUse as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"message": str(exc), "counts": exc.counts,
+                             "alternative": f"PATCH /products/{product_code} "
+                                            "with is_active=false"}) from exc
+    except ProductError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc

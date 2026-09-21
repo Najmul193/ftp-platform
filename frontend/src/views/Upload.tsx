@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { api, Probe, UploadResult } from "../api";
-import { Button, Card, Empty, Grid, Pill, Stat, Table } from "../components/ui";
+import { Button, Card, Empty, Grid, MiniButton, Pill, Stat, Table } from "../components/ui";
+import type { ExceptionRow } from "../api";
 import { longDate } from "../format";
 import { useApp, useAsync } from "../state";
 
@@ -15,6 +16,7 @@ export default function Upload() {
   const [error, setError] = useState<string | null>(null);
   const [businessDate, setBusinessDate] = useState("");
   const [sheet, setSheet] = useState("");
+  const [mode, setMode] = useState<"replace" | "merge">("replace");
   const [drag, setDrag] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -37,6 +39,9 @@ export default function Upload() {
       const p = await api.probe(f);
       setProbe(p);
       setStage("probed");
+      // A completion file tops a day up; replacing on one would delete the rows
+      // that loaded fine and leave only the corrected handful.
+      setMode(p.suggested_mode);
       // A single qualifying sheet is the common daily case -- preselect it so
       // the operator confirms rather than retypes.
       const included = p.sheets.filter((s) => s.included);
@@ -56,6 +61,7 @@ export default function Upload() {
       const r = await api.upload(file, {
         business_date: businessDate || undefined,
         sheet_name: sheet || undefined,
+        mode,
       });
       setResult(r);
       setStage("done");
@@ -153,8 +159,39 @@ export default function Upload() {
               </div>
             )}
 
+            {probe.looks_like_rejects_export && (
+              <div style={{ marginTop: 12, padding: "10px 12px", borderRadius: 8,
+                            background: "var(--surface-2)",
+                            border: "1px solid var(--series-1)" }}>
+                <Pill tone="info">Completion file</Pill>
+                <p style={{ margin: "6px 0 0", fontSize: 12.5,
+                            color: "var(--text-secondary)" }}>
+                  This is a rejected-rows workbook produced by this system. It
+                  will be <b>merged</b> into the day already loaded, so the rows
+                  that loaded fine are kept.
+                </p>
+              </div>
+            )}
+
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap",
                           alignItems: "flex-end", marginTop: 14 }}>
+              <div>
+                <span style={{ display: "block", color: "var(--text-muted)",
+                               fontSize: 10.5, fontWeight: 600, letterSpacing: ".05em",
+                               textTransform: "uppercase", marginBottom: 4 }}>
+                  If the date is already loaded
+                </span>
+                <div style={{ display: "flex", gap: 5 }}>
+                  <MiniButton active={mode === "replace"} onClick={() => setMode("replace")}
+                              title="The bank resent the whole day; anything absent is gone">
+                    Replace the day
+                  </MiniButton>
+                  <MiniButton active={mode === "merge"} onClick={() => setMode("merge")}
+                              title="Top up the day; only the accounts in this file are updated">
+                    Merge into it
+                  </MiniButton>
+                </div>
+              </div>
               {multiDate ? (
                 <p style={{ margin: 0, fontSize: 12.5, color: "var(--text-secondary)" }}>
                   {included.length} dated sheets will load as a backfill
@@ -223,6 +260,58 @@ export default function Upload() {
                   ` to ${longDate(result.business_dates.at(-1)!)}`}
               </>}
             </p>
+            {result.rejected_rows > 0 && (
+              <div style={{
+                marginTop: 12, padding: "11px 13px", borderRadius: 8,
+                background: "var(--surface-2)",
+                border: "1px solid var(--status-critical)",
+              }}>
+                <Pill tone="critical">
+                  {result.rejected_rows.toLocaleString()} rows not loaded
+                </Pill>
+                <p style={{ margin: "7px 0 0", fontSize: 12.5,
+                            color: "var(--text-secondary)" }}>
+                  These rows reference master data that does not exist yet. The
+                  rest of the file loaded and the figures above already include
+                  it. Download the rejected rows, register what is missing, then
+                  re-upload the same file — it merges into the day.
+                </p>
+                {(() => {
+                  const groups = groupReasons(exceptions.data ?? []);
+                  const counted = Object.values(groups).reduce((a, b) => a + b, 0);
+                  return (
+                    <>
+                      <ul style={{ margin: "8px 0 0", paddingLeft: 18, fontSize: 12,
+                                   color: "var(--text-secondary)" }}>
+                        {Object.entries(groups).map(([what, rows]) => (
+                          <li key={what}><b>{what}</b> — {rows} row{rows === 1 ? "" : "s"}</li>
+                        ))}
+                      </ul>
+                      {counted > result.rejected_rows && (
+                        // The counts are per reason, so a row failing on both a
+                        // missing branch and a missing product is counted twice.
+                        // Saying so is cheaper than leaving the arithmetic to
+                        // look wrong.
+                        <p style={{ margin: "6px 0 0", fontSize: 11.5,
+                                    color: "var(--text-muted)" }}>
+                          {counted - result.rejected_rows} row
+                          {counted - result.rejected_rows === 1 ? "" : "s"} fail more
+                          than one check, so the counts above add up to more than{" "}
+                          {result.rejected_rows}.
+                        </p>
+                      )}
+                    </>
+                  );
+                })()}
+                <div style={{ marginTop: 10 }}>
+                  <Button variant="danger"
+                          onClick={() => api.downloadRejects(result.batch_ref)}>
+                    Download rejected rows (.xlsx)
+                  </Button>
+                </div>
+              </div>
+            )}
+
             <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
               <Button variant="primary" onClick={() => { location.hash = "#/overview"; }}>
                 View the dashboard
@@ -286,4 +375,21 @@ export default function Upload() {
       </Card>
     </div>
   );
+}
+
+/** Group rejections by what is actually missing, so the operator reads a short
+ *  list of master records to create rather than one line per row. */
+function groupReasons(rows: ExceptionRow[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const r of rows) {
+    if (r.severity !== "REJECT") continue;
+    const m = r.message.match(/branch '([^']+)'/) ?? r.message.match(/product '([^']+)'/);
+    const key = m
+      ? (r.message.includes("branch")
+          ? `Branch ${m[1]} is not registered`
+          : `Product ${m[1]} is not registered`)
+      : `${r.rule_code}: ${r.message}`;
+    out[key] = (out[key] ?? 0) + 1;
+  }
+  return out;
 }

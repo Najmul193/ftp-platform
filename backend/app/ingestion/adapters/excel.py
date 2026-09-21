@@ -115,6 +115,13 @@ class ExcelAdapter(SourceAdapter):
                 if info.included:
                     result.header_issues.extend(self._check_headers(ws, name))
 
+            # A rejects export carries a "What to fix" sheet. Recognising it
+            # lets the UI default to MERGE, so a completion file tops a day up
+            # instead of truncating it.
+            result.looks_like_rejects_export = any(
+                n.strip().lower() == "what to fix" for n in wb.sheetnames
+            )
+
             # Keep workbook order so the preview reads like the file looks.
             order = {n: i for i, n in enumerate(wb.sheetnames)}
             result.sheets.sort(key=lambda s: order.get(s.name, 0))

@@ -15,12 +15,13 @@ from __future__ import annotations
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
+from enum import Enum
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Iterable
 
-from sqlalchemy import case, func, select, text, update
+from sqlalchemy import case, func, select, text, tuple_, update
 from sqlalchemy.orm import Session
 
 from app.core.security import file_digest
@@ -35,7 +36,8 @@ from app.ingestion.mapping import LEGACY_WORKBOOK_MAPPING, ColumnMapping
 from app.models import (
     AggDailyBranch, AggDailyBranchProduct, AggDailyCategory, AggDailyDistrict,
     AggDailyDivision, AggDailyProduct, BankDailyAccountData, Branch,
-    CalculationRun, FtpCalculationResult, Product, UploadBatch, UploadException,
+    CalculationRun, FtpCalculationResult, Product, StagingAccountData,
+    UploadBatch, UploadException,
 )
 from app.repositories.rates import RateBook
 from app.services import audit
@@ -43,6 +45,23 @@ from app.services import audit
 
 class PipelineError(Exception):
     """A stage could not proceed. The batch is marked FAILED with this message."""
+
+
+class UploadMode(str, Enum):
+    """How a new batch relates to data already loaded for the same date.
+
+    REPLACE is the right default for a daily file: the bank resent the day, so
+    anything absent from the new file is genuinely gone.
+
+    MERGE is for a completion file -- typically the rejected-rows workbook sent
+    back after the missing branch or product was registered. It supersedes only
+    the accounts it actually contains and leaves the rest of the day intact.
+    Replacing on a completion file would delete the 72 rows that loaded fine and
+    leave only the 7 that were fixed.
+    """
+
+    REPLACE = "replace"
+    MERGE = "merge"
 
 
 @dataclass
@@ -139,6 +158,32 @@ class UploadPipeline:
         warned = {f.source_row_no for f in findings
                   if f.severity is Severity.WARN and f.source_row_no}
 
+        # Persist every parsed row, accepted or not. Rejected rows have to
+        # survive so the operator can download them, fix the master data, and
+        # re-upload just those rows -- a rejection that cannot be handed back
+        # is a rejection the user has to reconstruct by hand.
+        first_rule: dict[int, str] = {}
+        for f in findings:
+            if f.blocking and f.source_row_no:
+                first_rule.setdefault(f.source_row_no, f.rule_code)
+
+        self.s.bulk_save_objects([
+            StagingAccountData(
+                batch_id=batch.id, source_row_no=r.source_row_no,
+                origin=r.extras.get("_origin"),
+                business_date=r.business_date, branch_code=r.branch_code,
+                account_no=r.account_no, side=r.side, product_code=r.product_code,
+                balance=r.balance, int_payable=r.int_payable,
+                int_receivable=r.int_receivable, roi=r.roi,
+                extras={k: v for k, v in r.extras.items()
+                        if not k.startswith("_") or k == "_origin"},
+                status=("REJECT" if r.source_row_no in blocked
+                        else "WARN" if r.source_row_no in warned else "OK"),
+                rule_code=first_rule.get(r.source_row_no),
+            )
+            for r in rows
+        ])
+
         for f in findings:
             self.s.add(UploadException(
                 batch_id=batch.id, source_row_no=f.source_row_no or None,
@@ -212,18 +257,26 @@ class UploadPipeline:
     # ------------------------------------------------------------------ #
 
     def commit_batch(self, batch: UploadBatch, rows: list[RawRow],
-                     findings: list[Exception_]) -> list[date]:
-        """Promote accepted rows and supersede any prior batch for the same dates."""
+                     findings: list[Exception_],
+                     mode: UploadMode = UploadMode.REPLACE) -> list[date]:
+        """Promote accepted rows, superseding prior data according to `mode`."""
         blocked = rejected_rows(findings)
         accepted = [r for r in rows if r.source_row_no not in blocked]
         if not accepted:
-            raise PipelineError(
-                f"every row was rejected ({batch.rejected_rows} of {batch.total_rows}); "
-                "nothing to commit"
+            # Not an error: the file parsed fine, nothing in it qualified. The
+            # batch stays queryable so the rejects workbook can be downloaded,
+            # the master data fixed, and the same file re-uploaded.
+            batch.status = "REJECTED"
+            batch.status_message = (
+                f"all {batch.total_rows} rows were rejected; download the "
+                "rejected-rows workbook, correct the master data, and re-upload"
             )
+            self.s.flush()
+            return []
 
         dates = sorted({r.business_date for r in accepted if r.business_date})
-        self._supersede_prior(batch, dates)
+        keys = {(r.business_date, r.branch_code, r.account_no) for r in accepted}
+        self._supersede_prior(batch, dates, mode, keys)
 
         self.s.bulk_save_objects([
             BankDailyAccountData(
@@ -250,40 +303,49 @@ class UploadPipeline:
         )
         return dates
 
-    def _supersede_prior(self, batch: UploadBatch, dates: list[date]) -> None:
-        """Mark earlier data for these dates superseded. Nothing is deleted."""
+    def _supersede_prior(self, batch: UploadBatch, dates: list[date],
+                         mode: UploadMode,
+                         keys: set[tuple]) -> None:
+        """Retire earlier data that the new batch replaces. Nothing is deleted.
+
+        In REPLACE mode the whole date is retired. In MERGE mode only the
+        account-days actually present in the new batch are, so a completion file
+        tops up a day instead of truncating it.
+        """
+        B = BankDailyAccountData
+        scope = [B.business_date.in_(dates), B.is_current.is_(True),
+                 B.batch_id != batch.id]
+
+        if mode is UploadMode.MERGE:
+            if not keys:
+                return
+            key_tuple = tuple_(B.business_date, B.branch_code, B.account_no)
+            scope.append(key_tuple.in_(list(keys)))
+
         prior_ids = set(self.s.scalars(
-            select(BankDailyAccountData.batch_id)
-            .where(BankDailyAccountData.business_date.in_(dates))
-            .where(BankDailyAccountData.is_current.is_(True))
-            .distinct()
+            select(B.batch_id).where(*scope).distinct()
         ))
-        prior_ids.discard(batch.id)
         if not prior_ids:
+            # Nothing to retire. In MERGE mode this is the normal case: the
+            # rows being completed were rejected before, so they were never
+            # committed and there is no earlier version of them.
             return
 
-        self.s.execute(
-            update(BankDailyAccountData)
-            .where(BankDailyAccountData.business_date.in_(dates))
-            .where(BankDailyAccountData.is_current.is_(True))
-            .values(is_current=False)
-        )
-        self.s.execute(
-            update(FtpCalculationResult)
-            .where(FtpCalculationResult.business_date.in_(dates))
-            .where(FtpCalculationResult.is_current.is_(True))
-            .values(is_current=False)
-        )
-        self.s.execute(
-            update(UploadBatch).where(UploadBatch.id.in_(prior_ids))
-            .values(is_current=False, superseded_by_batch_id=batch.id)
-        )
-        batch.supersedes_batch_id = max(prior_ids)
+        self.s.execute(update(B).where(*scope).values(is_current=False))
+
+        if mode is UploadMode.REPLACE:
+            self.s.execute(
+                update(UploadBatch).where(UploadBatch.id.in_(prior_ids))
+                .values(is_current=False, superseded_by_batch_id=batch.id)
+            )
+            batch.supersedes_batch_id = max(prior_ids)
 
         audit.record(
             self.s, action="SUPERSEDE", entity_type="upload_batch",
             entity_id=batch.batch_ref,
-            after={"superseded_batch_ids": sorted(prior_ids),
+            after={"mode": mode.value,
+                   "superseded_batch_ids": sorted(prior_ids),
+                   "account_days_superseded": len(keys) if mode is UploadMode.MERGE else None,
                    "dates": [d.isoformat() for d in dates]},
             actor_user_id=self.actor_id, actor_username=self.actor_username,
         )
@@ -309,6 +371,19 @@ class UploadPipeline:
         self.s.add(run)
         self.s.flush()
 
+        # Retire every existing fact for these dates before rebuilding them.
+        # This has to happen here rather than in the supersede step: the rebuild
+        # below recomputes the whole date from all current bank rows, so any
+        # surviving fact would collide with the partial unique index that keeps
+        # one live row per account-day.
+        self.s.execute(
+            update(FtpCalculationResult)
+            .where(FtpCalculationResult.business_date.in_(dates))
+            .where(FtpCalculationResult.is_current.is_(True))
+            .values(is_current=False)
+        )
+        self.s.flush()
+
         branches = {
             b.branch_code: b for b in self.s.scalars(select(Branch))
         }
@@ -321,10 +396,12 @@ class UploadPipeline:
             book = RateBook(self.s, on)
             run.global_config_id = book.global_rates.version
 
+            # Every current row for the date, not just this batch's. After a
+            # merge the date is made up of rows from more than one batch, and
+            # the aggregates must reflect all of them.
             source = self.s.scalars(
                 select(BankDailyAccountData)
                 .where(BankDailyAccountData.business_date == on)
-                .where(BankDailyAccountData.batch_id == batch.id)
                 .where(BankDailyAccountData.is_current.is_(True))
             )
 
@@ -498,6 +575,7 @@ class UploadPipeline:
 
     def run(self, path: Path, *, business_date: date | None = None,
             sheet_name: str | None = None, auto_commit: bool = True,
+            mode: UploadMode = UploadMode.REPLACE,
             mapping: ColumnMapping = LEGACY_WORKBOOK_MAPPING) -> StageResult:
         """Execute every stage. Returns a summary suitable for the UI."""
         batch = self.receive(path, business_date=business_date, sheet_name=sheet_name)
@@ -513,7 +591,12 @@ class UploadPipeline:
                 self.s.flush()
                 return result
 
-            dates = self.commit_batch(batch, rows, findings)
+            dates = self.commit_batch(batch, rows, findings, mode)
+            if not dates:
+                result.status = batch.status
+                result.message = batch.status_message
+                return result
+
             run = self.calculate_dates(batch, dates)
             self.refresh_aggregates(run, dates)
 

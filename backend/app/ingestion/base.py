@@ -37,6 +37,8 @@ class ProbeResult:
     sheets: list[SheetInfo] = field(default_factory=list)
     header_issues: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    #: True when the file is a rejected-rows workbook this system produced.
+    looks_like_rejects_export: bool = False
 
     @property
     def included_sheets(self) -> list[SheetInfo]:

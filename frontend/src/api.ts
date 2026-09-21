@@ -147,12 +147,31 @@ export const api = {
     fd.append("file", file);
     return request<Probe>("/uploads/probe", { method: "POST", body: fd });
   },
-  upload: (file: File, opts: { business_date?: string; sheet_name?: string }) => {
+  upload: (file: File, opts: {
+    business_date?: string; sheet_name?: string; mode?: "replace" | "merge";
+  }) => {
     const fd = new FormData();
     fd.append("file", file);
     if (opts.business_date) fd.append("business_date", opts.business_date);
     if (opts.sheet_name) fd.append("sheet_name", opts.sheet_name);
+    fd.append("mode", opts.mode ?? "replace");
     return request<UploadResult>("/uploads", { method: "POST", body: fd });
+  },
+  /** The rejected rows, as a workbook that goes straight back in once the
+   *  master data is fixed. Downloaded via fetch so the auth header travels
+   *  with it -- a plain link would be unauthenticated. */
+  downloadRejects: async (ref: string) => {
+    const res = await fetch(`${BASE}/uploads/${ref}/rejects.xlsx`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new ApiError(res.status, "could not build the rejects file");
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `rejected-rows-${ref}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
   },
   batches: () => request<Batch[]>("/uploads"),
   batchExceptions: (ref: string) => request<ExceptionRow[]>(`/uploads/${ref}/exceptions`),
@@ -331,6 +350,8 @@ export interface Product {
 export interface Probe {
   ok: boolean; errors: string[]; header_issues: string[];
   business_dates: string[]; total_data_rows: number;
+  looks_like_rejects_export: boolean;
+  suggested_mode: "replace" | "merge";
   sheets: { name: string; business_date: string | null; included: boolean;
     reason: string; data_rows: number }[];
 }
@@ -339,6 +360,7 @@ export interface UploadResult {
   warned_rows: number; rejected_rows: number; structural_rows: number;
   business_dates: string[]; run_ref: string | null;
   exceptions_by_rule: Record<string, number>;
+  message?: string | null;
 }
 export interface Batch {
   id: number; batch_ref: string; business_date: string | null; file_name: string;
