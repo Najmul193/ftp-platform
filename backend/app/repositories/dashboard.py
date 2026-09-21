@@ -18,7 +18,7 @@ from typing import Any, Sequence
 from sqlalchemy import Select, and_, func, select
 from sqlalchemy.orm import Session
 
-from app.domain.scope import ScopeFilter
+from app.domain.scope import ScopeFilter, intersect_requested
 from app.domain.types import Side
 from app.models import (
     AggDailyBranch, AggDailyBranchProduct, AggDailyCategory, Branch,
@@ -26,6 +26,9 @@ from app.models import (
 )
 
 ZERO = Decimal(0)
+#: Presentation scale for derived ratios. Division yields the full Decimal
+#: context precision, which is meaningless noise on a percentage.
+RATE_Q = Decimal("0.0001")
 
 
 @dataclass(slots=True)
@@ -59,20 +62,21 @@ def _apply_scope(stmt: Select, model: Any, scope: ScopeFilter) -> Select:
 
 
 def _apply_filters(stmt: Select, model: Any, f: Filters) -> Select:
+    """Non-branch predicates only.
+
+    Branch, division, district and category are deliberately NOT applied here.
+    They are resolved into the effective scope by `DashboardRepo._scope_for`, so
+    that asking for a branch outside your scope is a 403 rather than a silently
+    empty result. Applying them here as well would restore the leak.
+    """
     if f.date_from:
         stmt = stmt.where(model.business_date >= f.date_from)
     if f.date_to:
         stmt = stmt.where(model.business_date <= f.date_to)
-    if f.branch_ids and hasattr(model, "branch_id"):
-        stmt = stmt.where(model.branch_id.in_(f.branch_ids))
-    if f.division_id and hasattr(model, "division_id"):
-        stmt = stmt.where(model.division_id == f.division_id)
-    if f.district_id and hasattr(model, "district_id"):
-        stmt = stmt.where(model.district_id == f.district_id)
-    if f.branch_category and hasattr(model, "branch_category"):
-        stmt = stmt.where(model.branch_category == f.branch_category)
     if f.product_codes and hasattr(model, "product_code"):
         stmt = stmt.where(model.product_code.in_(f.product_codes))
+    if f.side is not None and hasattr(model, "side"):
+        stmt = stmt.where(model.side == f.side)
     return stmt
 
 
@@ -81,7 +85,9 @@ def _apply_filters(stmt: Select, model: Any, f: Filters) -> Select:
 _MEASURES = (
     "asset_balance", "liability_balance", "interest_receivable", "interest_payable",
     "asset_ftp_profit", "liability_ftp_profit", "net_ftp_profit",
-    "roi_x_balance", "ftp_rate_x_balance", "total_balance",
+    "roi_x_balance", "ftp_rate_x_balance",
+    "benchmark_contrib", "roi_contrib", "liquidity_contrib", "other_contrib",
+    "total_balance",
 )
 
 
@@ -109,9 +115,43 @@ class DashboardRepo:
 
     # ------------------------------------------------------------------ #
 
+    def _scope_for(self, f: Filters) -> ScopeFilter:
+        """Intersect the caller's scope with the requested branch selection.
+
+        Every branch-shaped filter -- explicit branch ids, a division, a
+        district, a category -- is resolved to a branch set and intersected
+        here. Asking for something outside your scope raises `ScopeViolation`
+        (403); it does not quietly return zeros, because a zero would confirm
+        the requested filter was well-formed and let a branch user map the
+        hierarchy by watching totals move.
+
+        A filter that legitimately matches no branch is different: that is an
+        honest empty result, not a violation.
+        """
+        requested: set[int] | None = set(f.branch_ids) if f.branch_ids else None
+
+        if f.division_id or f.district_id or f.branch_category:
+            stmt = select(Branch.id)
+            if f.division_id:
+                stmt = stmt.where(Branch.division_id == f.division_id)
+            if f.district_id:
+                stmt = stmt.where(Branch.district_id == f.district_id)
+            if f.branch_category:
+                stmt = stmt.where(Branch.category == f.branch_category)
+            resolved = set(self.s.scalars(stmt))
+            requested = resolved if requested is None else (requested & resolved)
+
+        if requested is None:
+            return self.scope
+        if not requested:
+            return ScopeFilter(unrestricted=False, branch_ids=frozenset())
+        return intersect_requested(self.scope, requested)
+
+    # ------------------------------------------------------------------ #
+
     def kpis(self, f: Filters) -> dict[str, Any]:
         model = _grain(f)
-        stmt = _apply_filters(_apply_scope(select(*_sums(model)), model, self.scope), model, f)
+        stmt = _apply_filters(_apply_scope(select(*_sums(model)), model, self._scope_for(f)), model, f)
         row = self.s.execute(stmt).one()
         data = {m: (getattr(row, m) or ZERO) for m in _MEASURES}
         data["account_count"] = row.account_count or 0
@@ -124,7 +164,7 @@ class DashboardRepo:
                     func.count(func.distinct(model.branch_id)),
                     func.count(func.distinct(model.business_date)),
                 ),
-                model, self.scope,
+                model, self._scope_for(f),
             ),
             model, f,
         )
@@ -143,7 +183,10 @@ class DashboardRepo:
         # Annualised. Numerator and denominator accumulate over the same days,
         # so the ratio is the average daily rate; x365 annualises it. It must
         # NOT additionally be divided by day_count.
-        ratio = (net / total_balance * Decimal(365) * Decimal(100)) if total_balance else ZERO
+        ratio = (
+            (net / total_balance * Decimal(365) * Decimal(100)).quantize(RATE_Q)
+            if total_balance else ZERO
+        )
 
         return {
             **data,
@@ -157,7 +200,7 @@ class DashboardRepo:
 
     def _breakdown(self, f: Filters, model: Any, keys: Sequence, labels) -> list[dict]:
         stmt = _apply_filters(
-            _apply_scope(select(*keys, *_sums(model)), model, self.scope), model, f
+            _apply_scope(select(*keys, *_sums(model)), model, self._scope_for(f)), model, f
         )
         stmt = stmt.group_by(*keys).order_by(func.sum(model.net_ftp_profit).desc())
         out = []
@@ -174,7 +217,10 @@ class DashboardRepo:
                 "total_balance": bal,
                 "account_count": r.account_count or 0,
                 "negative_ftp_count": r.negative_ftp_count or 0,
-                "avg_ftp_rate": ((r.ftp_rate_x_balance or ZERO) / bal) if bal else ZERO,
+                "avg_ftp_rate": (
+                    ((r.ftp_rate_x_balance or ZERO) / bal).quantize(RATE_Q)
+                    if bal else ZERO
+                ),
             })
         return out
 
@@ -187,11 +233,19 @@ class DashboardRepo:
         return self._breakdown(f, m, [m.product_id, m.product_code], lambda r: r[1])
 
     def by_category(self, f: Filters) -> list[dict]:
-        m = AggDailyCategory if not f.needs_product_grain else AggDailyBranch
+        scope = self._scope_for(f)
+        # AggDailyCategory has no branch_id and therefore cannot carry a scope
+        # predicate. It is only safe when nothing needs scoping at all.
+        unscoped_ok = (
+            scope.unrestricted
+            and not f.needs_product_grain
+            and not (f.branch_ids or f.division_id or f.district_id or f.branch_category)
+        )
+        m = AggDailyCategory if unscoped_ok else AggDailyBranch
         key = m.branch_category
         stmt = _apply_filters(select(key, *_sums(m)), m, f)
         if m is not AggDailyCategory:
-            stmt = _apply_scope(stmt, m, self.scope)
+            stmt = _apply_scope(stmt, m, scope)
         stmt = stmt.group_by(key).order_by(func.sum(m.net_ftp_profit).desc())
         out = []
         for r in self.s.execute(stmt):
@@ -207,14 +261,17 @@ class DashboardRepo:
                 "total_balance": bal,
                 "account_count": r.account_count or 0,
                 "negative_ftp_count": r.negative_ftp_count or 0,
-                "avg_ftp_rate": ((r.ftp_rate_x_balance or ZERO) / bal) if bal else ZERO,
+                "avg_ftp_rate": (
+                    ((r.ftp_rate_x_balance or ZERO) / bal).quantize(RATE_Q)
+                    if bal else ZERO
+                ),
             })
         return out
 
     def trend(self, f: Filters) -> list[dict]:
         m = _grain(f)
         stmt = _apply_filters(
-            _apply_scope(select(m.business_date, *_sums(m)), m, self.scope), m, f
+            _apply_scope(select(m.business_date, *_sums(m)), m, self._scope_for(f)), m, f
         ).group_by(m.business_date).order_by(m.business_date)
         out = []
         for r in self.s.execute(stmt):
@@ -229,7 +286,10 @@ class DashboardRepo:
                 "total_balance": bal,
                 "account_count": r.account_count or 0,
                 "negative_ftp_count": r.negative_ftp_count or 0,
-                "avg_ftp_rate": ((r.ftp_rate_x_balance or ZERO) / bal) if bal else ZERO,
+                "avg_ftp_rate": (
+                    ((r.ftp_rate_x_balance or ZERO) / bal).quantize(RATE_Q)
+                    if bal else ZERO
+                ),
             })
         return out
 
@@ -240,7 +300,7 @@ class DashboardRepo:
                 select(m.branch_code, m.product_code,
                        func.coalesce(func.sum(m.net_ftp_profit), 0),
                        func.coalesce(func.sum(m.total_balance), 0)),
-                m, self.scope,
+                m, self._scope_for(f),
             ), m, f
         ).group_by(m.branch_code, m.product_code)
         return [
@@ -260,14 +320,6 @@ class DashboardRepo:
             conds.append(F.business_date >= f.date_from)
         if f.date_to:
             conds.append(F.business_date <= f.date_to)
-        if f.branch_ids:
-            conds.append(F.branch_id.in_(f.branch_ids))
-        if f.division_id:
-            conds.append(F.division_id == f.division_id)
-        if f.district_id:
-            conds.append(F.district_id == f.district_id)
-        if f.branch_category:
-            conds.append(F.branch_category == f.branch_category)
         if f.product_codes:
             conds.append(F.product_code.in_(f.product_codes))
         if f.side:
@@ -278,8 +330,9 @@ class DashboardRepo:
             conds.append(F.negative_ftp_flag.is_(True))
         elif f.ftp_sign == "POSITIVE":
             conds.append(F.negative_ftp_flag.is_(False))
-        if not self.scope.unrestricted:
-            conds.append(F.branch_id.in_(self.scope.branch_ids or [-1]))
+        scope = self._scope_for(f)
+        if not scope.unrestricted:
+            conds.append(F.branch_id.in_(scope.branch_ids or [-1]))
 
         where = and_(*conds)
         total = self.s.scalar(select(func.count()).select_from(F).where(where)) or 0
@@ -295,5 +348,5 @@ class DashboardRepo:
     def latest_business_date(self) -> date | None:
         stmt = _apply_scope(
             select(func.max(AggDailyBranch.business_date)), AggDailyBranch, self.scope
-        )
+        )  # unfiltered: "latest data I can see", independent of the current view
         return self.s.scalar(stmt)

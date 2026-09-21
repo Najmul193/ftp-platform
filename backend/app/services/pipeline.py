@@ -20,7 +20,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Iterable
 
-from sqlalchemy import func, select, text, update
+from sqlalchemy import case, func, select, text, update
 from sqlalchemy.orm import Session
 
 from app.core.security import file_digest
@@ -418,6 +418,18 @@ class UploadPipeline:
             func.sum(F.ftp_income),
             func.sum(F.normalized_roi * F.balance),
             func.sum(F.ftp_rate * F.balance),
+            # Signed to match the side's formula, so the four contributions
+            # sum to ftp_rate_x_balance at any rollup.
+            func.sum(
+                case((F.side == Side.LIABILITY, F.benchmark_rate * F.balance),
+                     else_=-F.benchmark_rate * F.balance)
+            ),
+            func.sum(
+                case((F.side == Side.LIABILITY, -F.normalized_roi * F.balance),
+                     else_=F.normalized_roi * F.balance)
+            ),
+            func.sum(-F.liquidity_cost * F.balance),
+            func.sum(-F.other_cost * F.balance),
             func.sum(F.balance),
             func.count(),
             func.count().filter(F.negative_ftp_flag.is_(True)),
@@ -433,8 +445,10 @@ class UploadPipeline:
                 asset_ftp_profit=v[4] or z, liability_ftp_profit=v[5] or z,
                 net_ftp_profit=v[6] or z,
                 roi_x_balance=v[7] or z, ftp_rate_x_balance=v[8] or z,
-                total_balance=v[9] or z,
-                account_count=v[10] or 0, negative_ftp_count=v[11] or 0,
+                benchmark_contrib=v[9] or z, roi_contrib=v[10] or z,
+                liquidity_contrib=v[11] or z, other_contrib=v[12] or z,
+                total_balance=v[13] or z,
+                account_count=v[14] or 0, negative_ftp_count=v[15] or 0,
             )
 
         grains = [

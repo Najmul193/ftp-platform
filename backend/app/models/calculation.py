@@ -181,8 +181,31 @@ class _AggMixin:
     net_ftp_profit: Mapped[Decimal] = mapped_column(Amount, server_default=text("0"))
 
     #: Weighted-average components, kept additive.
+    #:
+    #: Storing each rate component multiplied by balance is what makes the
+    #: spread waterfall possible at any grain: FTP income decomposes exactly
+    #: into benchmark, ROI, liquidity and other contributions, because
+    #:     income = SUM(b * rate) / 36500
+    #: and `rate` is itself a signed sum of those four components.
     roi_x_balance: Mapped[Decimal] = mapped_column(Amount, server_default=text("0"))
     ftp_rate_x_balance: Mapped[Decimal] = mapped_column(Amount, server_default=text("0"))
+
+    #: SIGNED contributions -- each component multiplied by balance and carrying
+    #: the sign with which it enters the spread for that side:
+    #:
+    #:   liability   rate = +benchmark -roi -liquidity -other
+    #:   asset       rate = -benchmark +roi -liquidity -other
+    #:
+    #: Storing the sign is what makes the identity
+    #:     ftp_rate_x_balance = benchmark + roi + liquidity + other contributions
+    #: hold at EVERY grain, including a branch that mixes both sides. Unsigned
+    #: components cannot decompose a mixed-side rollup, because the two formulas
+    #: point in opposite directions.
+    benchmark_contrib: Mapped[Decimal] = mapped_column(Amount, server_default=text("0"))
+    roi_contrib: Mapped[Decimal] = mapped_column(Amount, server_default=text("0"))
+    liquidity_contrib: Mapped[Decimal] = mapped_column(Amount, server_default=text("0"))
+    other_contrib: Mapped[Decimal] = mapped_column(Amount, server_default=text("0"))
+
     total_balance: Mapped[Decimal] = mapped_column(Money, server_default=text("0"))
 
     account_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
