@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bank FTP Profitability</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Primary navigation">
+        <div class="brand-block">
+          <div class="brand-mark">FTP</div>
+          <div>
+            <div class="brand-title">Profitability</div>
+            <div class="brand-subtitle">Bank Treasury Console</div>
+          </div>
+        </div>
+        <nav class="nav-tabs" aria-label="Dashboard sections">
+          <button class="nav-tab is-active" data-view="executive">Executive</button>
+          <button class="nav-tab" data-view="branch">Branch</button>
+          <button class="nav-tab" data-view="product">Product</button>
+          <button class="nav-tab" data-view="trend">Trend</button>
+          <button class="nav-tab" data-view="accounts">Accounts</button>
+          <button class="nav-tab" data-view="exceptions">Exceptions</button>
+          <button class="nav-tab" data-view="scenario">Scenario</button>
+          <button class="nav-tab" data-view="governance">Governance</button>
+        </nav>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <h1>Funds Transfer Pricing Dashboard</h1>
+            <p id="dataMeta">Loading portfolio data...</p>
+          </div>
+          <div class="top-actions">
+            <button id="exportCsv" class="secondary-button">Export CSV</button>
+            <button id="resetFilters" class="primary-button">Reset Filters</button>
+          </div>
+        </header>
+
+        <section class="filter-band" aria-label="Dashboard filters">
+          <label>
+            Date From
+            <input id="dateFrom" type="date" />
+          </label>
+          <label>
+            Date To
+            <input id="dateTo" type="date" />
+          </label>
+          <label>
+            Branch
+            <select id="branchFilter"></select>
+          </label>
+          <label>
+            Product
+            <select id="productFilter"></select>
+          </label>
+          <label>
+            Type
+            <select id="typeFilter">
+              <option value="ALL">All</option>
+              <option value="A">Asset</option>
+              <option value="L">Liability</option>
+            </select>
+          </label>
+          <label>
+            Account
+            <input id="accountSearch" type="search" placeholder="Search account" />
+          </label>
+        </section>
+
+        <section id="executive" class="view is-active">
+          <div id="kpiGrid" class="kpi-grid"></div>
+          <div class="layout-two">
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Branch FTP Ranking</h2>
+                <span id="branchCountBadge" class="status-pill"></span>
+              </div>
+              <div id="branchBarChart" class="chart-surface"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Product Contribution</h2>
+                <span id="productCountBadge" class="status-pill"></span>
+              </div>
+              <div id="productDonut" class="chart-surface compact"></div>
+            </section>
+          </div>
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Profit Drivers</h2>
+              <span class="status-pill">Top and Bottom Accounts</span>
+            </div>
+            <div class="layout-two">
+              <div id="topAccounts"></div>
+              <div id="bottomAccounts"></div>
+            </div>
+          </section>
+        </section>
+
+        <section id="branch" class="view">
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Branch Analysis</h2>
+              <span class="status-pill">Asset vs Liability</span>
+            </div>
+            <div id="branchTable"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Branch Product Heatmap</h2>
+              <span class="status-pill">FTP Profit</span>
+            </div>
+            <div id="heatmap"></div>
+          </section>
+        </section>
+
+        <section id="product" class="view">
+          <div class="layout-two">
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Product Analysis</h2>
+                <span class="status-pill">Yield and Spread</span>
+              </div>
+              <div id="productTable"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Balance vs Profit</h2>
+                <span class="status-pill">Scatter</span>
+              </div>
+              <div id="scatterChart" class="chart-surface"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="trend" class="view">
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Daily FTP Trend</h2>
+              <span class="status-pill">Asset, Liability, Net</span>
+            </div>
+            <div id="trendChart" class="chart-surface wide"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Daily Movement</h2>
+              <span class="status-pill">Business Date</span>
+            </div>
+            <div id="dailyTable"></div>
+          </section>
+        </section>
+
+        <section id="accounts" class="view">
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Account Drilldown</h2>
+              <span id="recordCountBadge" class="status-pill"></span>
+            </div>
+            <div id="accountTable"></div>
+          </section>
+        </section>
+
+        <section id="exceptions" class="view">
+          <div id="exceptionKpis" class="kpi-grid"></div>
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Exception Records</h2>
+              <span class="status-pill">Negative and Mismatch</span>
+            </div>
+            <div id="exceptionTable"></div>
+          </section>
+        </section>
+
+        <section id="scenario" class="view">
+          <section class="scenario-grid">
+            <div class="panel">
+              <div class="panel-header">
+                <h2>Scenario Controls</h2>
+                <span class="status-pill">Basis Points</span>
+              </div>
+              <div class="scenario-controls">
+                <label>
+                  Benchmark Shock
+                  <input id="benchmarkShock" type="range" min="-200" max="200" value="0" step="5" />
+                  <output id="benchmarkValue">0 bps</output>
+                </label>
+                <label>
+                  Liquidity Shock
+                  <input id="liquidityShock" type="range" min="-100" max="150" value="0" step="5" />
+                  <output id="liquidityValue">0 bps</output>
+                </label>
+                <label>
+                  Other Cost Shock
+                  <input id="otherShock" type="range" min="-50" max="100" value="0" step="5" />
+                  <output id="otherValue">0 bps</output>
+                </label>
+              </div>
+            </div>
+            <div id="scenarioKpis" class="kpi-grid scenario-kpis"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Scenario Product Impact</h2>
+              <span class="status-pill">Current vs Simulated</span>
+            </div>
+            <div id="scenarioTable"></div>
+          </section>
+        </section>
+
+        <section id="governance" class="view">
+          <div class="layout-two">
+            <section class="panel">
+              <div class="panel-header">
+                <h2>FTP Configuration</h2>
+                <span class="status-pill">Active</span>
+              </div>
+              <div id="configTable"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Control Summary</h2>
+                <span class="status-pill">Audit Ready</span>
+              </div>
+              <div id="controlSummary"></div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>

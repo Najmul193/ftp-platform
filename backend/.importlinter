@@ -1,0 +1,15 @@
+[importlinter]
+root_package = app
+
+[importlinter:contract:domain-is-pure]
+name = domain must not import infrastructure
+type = forbidden
+source_modules =
+    app.domain
+forbidden_modules =
+    app.models
+    app.repositories
+    app.api
+    app.services
+    app.tasks
+    app.ingestion
