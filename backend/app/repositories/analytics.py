@@ -1173,3 +1173,354 @@ class AnalyticsRepo:
             ),
             "areas": areas,
         }
+
+    # ------------------------------------------------------------------ #
+    # 14. The banker's daily set
+    # ------------------------------------------------------------------ #
+
+    def nii_reconciliation(self, f: Filters) -> dict[str, Any]:
+        """Net interest income reconciled to FTP -- the canonical FTP output.
+
+        FTP exists to answer one question: of the margin the bank earns from
+        customers, how much belongs to the business units that wrote the
+        business, and how much belongs to the treasury book that funded it?
+
+        The identity is exact and falls straight out of the stored components::
+
+            NII              = SUM(roi_contrib) / 36500
+            business units   = NII + benchmark + liquidity + other contributions
+            treasury retains = NII - business units
+
+        The benchmark term is the cost of funding the net asset position: when
+        assets exceed deposits the treasury has bought the difference, and that
+        cost is properly theirs rather than the branches'.
+        """
+        from app.repositories.dashboard import _sums
+
+        model = _grain(f)
+        stmt = _apply_filters(
+            _apply_scope(select(*_sums(model)), model, self.dash._scope_for(f)), model, f,
+        )
+        r = self.s.execute(stmt).one()
+
+        interest_received = _d(r.interest_receivable)
+        interest_paid = _d(r.interest_payable)
+        nii = interest_received - interest_paid
+
+        funding = _d(r.benchmark_contrib) / DAY_BASIS
+        liquidity = _d(r.liquidity_contrib) / DAY_BASIS
+        other = _d(r.other_contrib) / DAY_BASIS
+        lending = _d(r.asset_ftp_profit)
+        deposit = _d(r.liability_ftp_profit)
+        business_units = lending + deposit
+        treasury = nii - business_units
+
+        return {
+            "net_interest_income": nii.quantize(MONEY_Q),
+            "interest_received": interest_received.quantize(MONEY_Q),
+            "interest_paid": interest_paid.quantize(MONEY_Q),
+            "business_units_total": business_units.quantize(MONEY_Q),
+            "lending_spread": lending.quantize(MONEY_Q),
+            "deposit_spread": deposit.quantize(MONEY_Q),
+            "treasury_retained": treasury.quantize(MONEY_Q),
+            "treasury_funding_of_gap": funding.quantize(MONEY_Q),
+            "liquidity_premium": liquidity.quantize(MONEY_Q),
+            "other_cost": other.quantize(MONEY_Q),
+            "business_units_share_pct": (
+                (business_units / nii * 100).quantize(RATE_Q) if nii else None
+            ),
+            #: Proof the split is complete rather than merely plausible.
+            "check": (
+                nii + funding + liquidity + other - business_units
+            ).quantize(Decimal("0.01")),
+        }
+
+    def banking_ratios(self, f: Filters) -> dict[str, Any]:
+        """The ratios a bank reports daily, computed on the same slice.
+
+        All are annualised from balance-days, so they read as rates regardless
+        of how many days the window covers.
+        """
+        from app.models import Product
+        from app.repositories.dashboard import _sums
+
+        model = _grain(f)
+        stmt = _apply_filters(
+            _apply_scope(select(*_sums(model)), model, self.dash._scope_for(f)), model, f,
+        )
+        r = self.s.execute(stmt).one()
+
+        assets = _d(r.asset_balance)
+        liabs = _d(r.liability_balance)
+        received = _d(r.interest_receivable)
+        paid = _d(r.interest_payable)
+        nii = received - paid
+
+        def annualised(amount: Decimal, base: Decimal) -> Decimal | None:
+            return (amount / base * DAY_BASIS).quantize(RATE_Q) if base else None
+
+        yield_on_advances = annualised(received, assets)
+        cost_of_deposits = annualised(paid, liabs)
+        nim = annualised(nii, assets)
+
+        # CASA needs the demand/time split, which lives on the product master.
+        m = AggDailyBranchProduct
+        casa_rows = self.s.execute(
+            _apply_filters(
+                _apply_scope(
+                    select(Product.liability_nature, func.sum(m.liability_balance))
+                    .join(Product, Product.id == m.product_id)
+                    .where(Product.side == Side.LIABILITY),
+                    m, self.dash._scope_for(f),
+                ), m, f,
+            ).group_by(Product.liability_nature)
+        ).all()
+        demand = sum((_d(v) for k, v in casa_rows if k and k.value == "DEMAND"), ZERO)
+        time_ = sum((_d(v) for k, v in casa_rows if k and k.value == "TIME"), ZERO)
+        deposits = demand + time_
+
+        return {
+            "yield_on_advances_pct": yield_on_advances,
+            "cost_of_deposits_pct": cost_of_deposits,
+            "gross_spread_pct": (
+                (yield_on_advances - cost_of_deposits).quantize(RATE_Q)
+                if yield_on_advances is not None and cost_of_deposits is not None else None
+            ),
+            "nim_pct": nim,
+            "ftp_yield_pct": annualised(_d(r.net_ftp_profit), _d(r.total_balance)),
+            #: Advances over deposits. Above 100% means the book is not funded
+            #: by its own deposits and the shortfall is bought from treasury.
+            "credit_deposit_ratio_pct": (
+                (assets / liabs * 100).quantize(RATE_Q) if liabs else None
+            ),
+            #: Current and savings balances over total deposits. Watched daily
+            #: because low-cost deposits are what protect the margin.
+            "casa_ratio_pct": (
+                (demand / deposits * 100).quantize(RATE_Q) if deposits else None
+            ),
+            "casa_balance": demand.quantize(MONEY_Q),
+            "term_balance": time_.quantize(MONEY_Q),
+            "advances": assets.quantize(MONEY_Q),
+            "deposits": liabs.quantize(MONEY_Q),
+            "funding_gap": (assets - liabs).quantize(MONEY_Q),
+        }
+
+    def repricing_opportunity(self, f: Filters, *, limit: int = 25) -> dict[str, Any]:
+        """What the book would earn if underpriced accounts moved to their
+        product's median spread.
+
+        Median rather than mean, because a handful of deeply mispriced accounts
+        would drag a mean target down and understate the prize. Accounts already
+        at or above median are left alone -- this measures upside, not churn.
+        """
+        F = FtpCalculationResult
+        where = self._fact_where(f)
+
+        medians = select(
+            F.product_code.label("pc"),
+            func.percentile_cont(0.5).within_group(F.ftp_rate).label("median_rate"),
+        ).where(where).group_by(F.product_code).subquery()
+
+        uplift = (medians.c.median_rate - F.ftp_rate) * F.balance / DAY_BASIS
+
+        rows = self.s.execute(
+            select(
+                F.business_date, F.branch_code, F.account_no, F.product_code,
+                F.balance, F.ftp_rate, medians.c.median_rate, uplift.label("uplift"),
+            )
+            .join(medians, medians.c.pc == F.product_code)
+            .where(where).where(F.ftp_rate < medians.c.median_rate)
+            .order_by(uplift.desc()).limit(limit)
+        ).all()
+
+        totals = self.s.execute(
+            select(func.count(), func.sum(F.balance), func.sum(uplift))
+            .join(medians, medians.c.pc == F.product_code)
+            .where(where).where(F.ftp_rate < medians.c.median_rate)
+        ).one()
+
+        current = _d(self.s.scalar(select(func.sum(F.ftp_income)).where(where)))
+        prize = _d(totals[2])
+
+        return {
+            "accounts_below_median": totals[0] or 0,
+            "balance_below_median": _d(totals[1]).quantize(MONEY_Q),
+            "opportunity": prize.quantize(MONEY_Q),
+            "current_ftp_profit": current.quantize(MONEY_Q),
+            "uplift_pct": ((prize / current * 100).quantize(RATE_Q) if current else None),
+            "by_product": [
+                {"product_code": r[0], "accounts": r[1],
+                 "opportunity": _d(r[2]).quantize(MONEY_Q)}
+                for r in self.s.execute(
+                    select(F.product_code, func.count(), func.sum(uplift))
+                    .join(medians, medians.c.pc == F.product_code)
+                    .where(where).where(F.ftp_rate < medians.c.median_rate)
+                    .group_by(F.product_code).order_by(func.sum(uplift).desc())
+                ).all()
+            ],
+            "top_accounts": [
+                {"business_date": r.business_date, "branch_code": r.branch_code,
+                 "account_no": r.account_no, "product_code": r.product_code,
+                 "balance": _d(r.balance).quantize(MONEY_Q),
+                 "ftp_rate": _d(r.ftp_rate),
+                 "median_rate": _d(r.median_rate).quantize(Decimal("0.000001")),
+                 "uplift": _d(r.uplift).quantize(MONEY_Q)}
+                for r in rows
+            ],
+        }
+
+    def watchlist(self, f: Filters) -> dict[str, Any]:
+        """What needs attention today.
+
+        Ordered by money at stake rather than by rule, because an operator has
+        finite attention and the largest exposure should be read first.
+        """
+        from app.models import UploadBatch
+
+        items: list[dict[str, Any]] = []
+        period = self.resolve_period(f)
+        latest = self.dash.latest_business_date()
+
+        # --- staleness ---------------------------------------------------- #
+        if latest:
+            lag = (date.today() - latest).days
+            if lag > 1:
+                items.append({
+                    "severity": "warning" if lag <= 3 else "critical",
+                    "code": "STALE_DATA",
+                    "title": f"No data for {lag} days",
+                    "detail": f"The most recent business date loaded is {latest}.",
+                    "amount": None,
+                })
+
+        # --- rejected rows on the most recent batch ------------------------ #
+        batch = self.s.execute(
+            select(UploadBatch.batch_ref, UploadBatch.rejected_rows,
+                   UploadBatch.total_rows, UploadBatch.status)
+            .order_by(UploadBatch.id.desc()).limit(1)
+        ).first()
+        if batch and batch.rejected_rows:
+            items.append({
+                "severity": "critical",
+                "code": "REJECTED_ROWS",
+                "title": f"{batch.rejected_rows:,} rows rejected in {batch.batch_ref}",
+                "detail": f"of {batch.total_rows:,} read. Those accounts are absent "
+                          "from every figure on this page.",
+                "amount": None,
+            })
+        if batch and batch.status == "FAILED":
+            items.append({
+                "severity": "critical", "code": "BATCH_FAILED",
+                "title": f"Upload {batch.batch_ref} failed",
+                "detail": "The last upload did not complete.", "amount": None,
+            })
+
+        # --- loss-making accounts ------------------------------------------ #
+        leak = self.leakage(f, limit=1)
+        if leak["negative_account_days"]:
+            items.append({
+                "severity": "serious",
+                "code": "NEGATIVE_FTP",
+                "title": f"{leak['negative_account_days']:,} loss-making account-days",
+                "detail": f"Dragging {leak['drag']} on a balance of "
+                          f"{leak['negative_balance']}.",
+                "amount": leak["drag"],
+            })
+
+        # --- ROI vs interest disagreement ---------------------------------- #
+        F = FtpCalculationResult
+        where = self._fact_where(f)
+        mismatch = self.s.execute(
+            select(func.count(), func.sum(func.abs(F.interest_variance)))
+            .where(where).where(F.interest_mismatch.is_(True))
+        ).one()
+        if mismatch[0]:
+            items.append({
+                "severity": "warning",
+                "code": "ROI_INTEREST_MISMATCH",
+                "title": f"{mismatch[0]:,} accounts where ROI and interest disagree",
+                "detail": f"Total variance {_d(mismatch[1]).quantize(MONEY_Q)} against "
+                          "what the supplied rate implies.",
+                "amount": _d(mismatch[1]).quantize(MONEY_Q),
+            })
+
+        # --- products priced below their own funding cost ------------------- #
+        thin = self.s.execute(
+            select(F.product_code,
+                   func.sum(F.ftp_rate * F.balance) / func.nullif(func.sum(F.balance), 0),
+                   func.sum(F.balance))
+            .where(where).group_by(F.product_code)
+            .having(func.sum(F.ftp_rate * F.balance) < 0)
+        ).all()
+        for code, rate, bal in thin:
+            items.append({
+                "severity": "critical", "code": "PRODUCT_BELOW_COST",
+                "title": f"{code} is priced below its funding cost",
+                "detail": f"Weighted FTP rate {_d(rate).quantize(RATE_Q)}% on "
+                          f"{_d(bal).quantize(MONEY_Q)} of balance.",
+                "amount": None,
+            })
+
+        # --- repricing upside ------------------------------------------------ #
+        rep = self.repricing_opportunity(f, limit=1)
+        if rep["opportunity"] and rep["opportunity"] > ZERO:
+            items.append({
+                "severity": "info",
+                "code": "REPRICING_UPSIDE",
+                "title": f"{rep['opportunity']} available from repricing",
+                "detail": f"{rep['accounts_below_median']:,} account-days sit below "
+                          "their product's median spread.",
+                "amount": rep["opportunity"],
+            })
+
+        order = {"critical": 0, "serious": 1, "warning": 2, "info": 3}
+        items.sort(key=lambda i: (order.get(i["severity"], 9),
+                                  -abs(n_or_zero(i.get("amount")))))
+        return {
+            "as_of": latest,
+            "period": {"start": period.start, "end": period.end} if period else None,
+            "count": len(items),
+            "critical_count": sum(1 for i in items if i["severity"] == "critical"),
+            "items": items,
+        }
+
+    def period_summary(self, f: Filters) -> dict[str, Any]:
+        """Month-, quarter- and year-to-date totals against the latest date."""
+        latest = self.dash.latest_business_date()
+        if latest is None:
+            return {"available": False, "periods": []}
+
+        starts = {
+            "MTD": date(latest.year, latest.month, 1),
+            "QTD": date(latest.year, 3 * ((latest.month - 1) // 3) + 1, 1),
+            "YTD": date(latest.year, 1, 1),
+        }
+        out = []
+        for label, start in starts.items():
+            k = self.dash.kpis(replace(f, date_from=start, date_to=latest))
+            bal = _d(k.get("total_balance"))
+            out.append({
+                "label": label,
+                "start": start,
+                "end": latest,
+                "net_ftp_profit": _d(k.get("net_ftp_profit")).quantize(MONEY_Q),
+                "asset_ftp_profit": _d(k.get("asset_ftp_profit")).quantize(MONEY_Q),
+                "liability_ftp_profit": _d(k.get("liability_ftp_profit")).quantize(MONEY_Q),
+                "days": k.get("day_count", 0),
+                "avg_daily": (
+                    (_d(k.get("net_ftp_profit")) / k["day_count"]).quantize(MONEY_Q)
+                    if k.get("day_count") else ZERO
+                ),
+                "yield_pct": (
+                    (_d(k.get("ftp_rate_x_balance", 0)) / bal).quantize(RATE_Q)
+                    if bal else _d(k.get("ftp_over_balance_pct"))
+                ),
+            })
+        return {"available": True, "as_of": latest, "periods": out}
+
+
+def n_or_zero(v: Any) -> Decimal:
+    try:
+        return Decimal(str(v)) if v is not None else ZERO
+    except Exception:  # noqa: BLE001
+        return ZERO

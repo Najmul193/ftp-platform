@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { api, Probe, UploadResult } from "../api";
 import { Button, Card, Empty, Grid, Pill, Stat, Table } from "../components/ui";
-import { longDate, money } from "../format";
+import { longDate } from "../format";
 import { useApp, useAsync } from "../state";
 
 type Stage = "idle" | "probing" | "probed" | "uploading" | "done" | "error";

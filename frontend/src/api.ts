@@ -116,6 +116,12 @@ export const api = {
   productLeadership: (f: Filters, area: Dim) =>
     request<ProductLeadership>(`/analytics/product-leadership${qs(f, { area })}`),
   dataVersion: () => request<DataVersion>("/system/data-version"),
+  nii: (f: Filters) => request<Nii>(`/analytics/nii-reconciliation${qs(f)}`),
+  ratios: (f: Filters) => request<Ratios>(`/analytics/banking-ratios${qs(f)}`),
+  repricing: (f: Filters) => request<Repricing>(`/analytics/repricing${qs(f)}`),
+  watchlist: (f: Filters) => request<Watchlist>(`/analytics/watchlist${qs(f)}`),
+  periodSummary: (f: Filters) => request<PeriodSummary>(`/analytics/period-summary${qs(f)}`),
+  leakage2: (f: Filters) => request<Leakage>(`/analytics/leakage${qs(f)}`),
 
   // --- master -------------------------------------------------------------
   branches: (includeInactive = false) =>
@@ -404,4 +410,40 @@ export interface DataVersion {
   last_batch_at: string | null;
   latest_business_date: string | null;
   server_time: string;
+}
+
+export interface Nii {
+  net_interest_income: Num; interest_received: Num; interest_paid: Num;
+  business_units_total: Num; lending_spread: Num; deposit_spread: Num;
+  treasury_retained: Num; treasury_funding_of_gap: Num;
+  liquidity_premium: Num; other_cost: Num;
+  business_units_share_pct: Num | null; check: Num;
+}
+export interface Ratios {
+  yield_on_advances_pct: Num | null; cost_of_deposits_pct: Num | null;
+  gross_spread_pct: Num | null; nim_pct: Num | null; ftp_yield_pct: Num | null;
+  credit_deposit_ratio_pct: Num | null; casa_ratio_pct: Num | null;
+  casa_balance: Num; term_balance: Num; advances: Num; deposits: Num;
+  funding_gap: Num;
+}
+export interface Repricing {
+  accounts_below_median: number; balance_below_median: Num; opportunity: Num;
+  current_ftp_profit: Num; uplift_pct: Num | null;
+  by_product: { product_code: string; accounts: number; opportunity: Num }[];
+  top_accounts: { business_date: string; branch_code: string; account_no: string;
+    product_code: string; balance: Num; ftp_rate: Num; median_rate: Num; uplift: Num }[];
+}
+export interface WatchItem {
+  severity: "critical" | "serious" | "warning" | "info";
+  code: string; title: string; detail: string; amount: Num | null;
+}
+export interface Watchlist {
+  as_of: string | null; period: { start: string; end: string } | null;
+  count: number; critical_count: number; items: WatchItem[];
+}
+export interface PeriodSummary {
+  available: boolean; as_of?: string;
+  periods: { label: string; start: string; end: string; net_ftp_profit: Num;
+    asset_ftp_profit: Num; liability_ftp_profit: Num; days: number;
+    avg_daily: Num; yield_pct: Num }[];
 }

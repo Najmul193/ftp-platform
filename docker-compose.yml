@@ -1,0 +1,70 @@
+# Full stack, one command:  docker compose up --build
+#
+# Mirrors the Render topology (§15.10 of the plan): a managed database, a web
+# service, and background workers, all from the same images.
+
+name: ftp-platform
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ftp
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ftp_dev}
+      POSTGRES_DB: ftp
+    ports:
+      - "${FTP_DB_PORT:-55432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ftp -d ftp"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  # Migrations run to completion before the API starts, so the schema is never
+  # behind the code that expects it.
+  migrate:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://ftp:${POSTGRES_PASSWORD:-ftp_dev}@db:5432/ftp
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      sh -c "alembic upgrade head && python -m app.cli.seed"
+    restart: "no"
+
+  api:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://ftp:${POSTGRES_PASSWORD:-ftp_dev}@db:5432/ftp
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      SECRET_KEY: ${SECRET_KEY:-dev-only-insecure-key-change-me}
+      UPLOAD_STORAGE_DIR: /data/uploads
+    volumes:
+      - uploads:/data/uploads
+    ports:
+      - "${FTP_API_PORT:-8099}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./frontend
+    ports:
+      - "${FTP_WEB_PORT:-5173}:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  uploads:

@@ -138,3 +138,39 @@ def product_leadership(db: DbDep, scope: ScopeDep, f: FiltersDep,
                        area: Dim = "district"):
     """Which product leads in each area, its dominance, and its margin."""
     return AnalyticsRepo(db, scope).product_leadership(f, area=area)
+
+
+@router.get("/nii-reconciliation", dependencies=[_view])
+def nii_reconciliation(db: DbDep, scope: ScopeDep, f: FiltersDep):
+    """Net interest income split between business units and treasury.
+
+    The canonical FTP output: of the margin earned from customers, how much
+    belongs to the units that wrote the business and how much to the book that
+    funded it.
+    """
+    return AnalyticsRepo(db, scope).nii_reconciliation(f)
+
+
+@router.get("/banking-ratios", dependencies=[_view])
+def banking_ratios(db: DbDep, scope: ScopeDep, f: FiltersDep):
+    """Yield on advances, cost of deposits, NIM, CASA and CD ratio."""
+    return AnalyticsRepo(db, scope).banking_ratios(f)
+
+
+@router.get("/repricing", dependencies=[_view])
+def repricing(db: DbDep, scope: ScopeDep, f: FiltersDep,
+              limit: int = Query(25, ge=1, le=200)):
+    """What the book would earn if underpriced accounts moved to product median."""
+    return AnalyticsRepo(db, scope).repricing_opportunity(f, limit=limit)
+
+
+@router.get("/watchlist", dependencies=[_view])
+def watchlist(db: DbDep, scope: ScopeDep, f: FiltersDep):
+    """What needs attention today, ordered by money at stake."""
+    return AnalyticsRepo(db, scope).watchlist(f)
+
+
+@router.get("/period-summary", dependencies=[_view])
+def period_summary(db: DbDep, scope: ScopeDep, f: FiltersDep):
+    """Month-, quarter- and year-to-date totals."""
+    return AnalyticsRepo(db, scope).period_summary(f)
