@@ -37,6 +37,7 @@ class MeResponse(BaseModel):
     scope_label: str
     roles: list[str]
     permissions: list[str]
+    must_change_password: bool = False
 
 
 # --- organisation ----------------------------------------------------------- #

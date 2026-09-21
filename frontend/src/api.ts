@@ -75,6 +75,7 @@ export interface Me {
   scope_level: "HO" | "DIVISION" | "DISTRICT" | "BRANCH";
   scope_id: number | null; scope_label: string;
   roles: string[]; permissions: string[];
+  must_change_password: boolean;
 }
 
 export const api = {
@@ -84,6 +85,11 @@ export const api = {
       body: JSON.stringify({ username, password }),
     }),
   me: () => request<Me>("/auth/me"),
+  changePassword: (current_password: string, new_password: string) =>
+    request<void>("/auth/password/change", {
+      method: "POST",
+      body: JSON.stringify({ current_password, new_password }),
+    }),
 
   // --- dashboard ----------------------------------------------------------
   kpis: (f: Filters) => request<Kpis>(`/dashboard/kpis${qs(f)}`),

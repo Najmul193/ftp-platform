@@ -21,7 +21,6 @@ every commit. See [`docs/PARITY.md`](docs/PARITY.md).
 |---|---|
 | Dashboard | http://127.0.0.1:5173 |
 | API docs | http://127.0.0.1:8099/docs |
-| Sign in | `admin` / `ChangeMe!2026` |
 
 First run needs the toolchain in place:
 
@@ -29,6 +28,46 @@ First run needs the toolchain in place:
 cd backend  && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cd frontend && npm install
 ```
+
+---
+
+## Sign in
+
+### Administrator
+
+```
+username:  admin
+password:  ChangeMe!2026
+```
+
+**This password must be changed on first sign-in.** The account is flagged
+`must_change_password`, and the application gates on it — a seeded password is
+a shared secret until it is replaced, so nothing else is reachable until you
+set a new one. Minimum 12 characters.
+
+`admin` holds `ADMIN`, `FTP_MANAGER`, `DATA_OPERATOR` and `ANALYST`: it can
+upload data, maintain branches and products, manage users and read everything.
+
+### Demo accounts
+
+All four share the password `Passw0rd!2026x`. They exist to make scope
+enforcement visible — sign in as each and the *same* dashboard returns a
+different slice, because scope is applied server-side on every query:
+
+| Username | Scope | Role | Sees (with the sample data loaded) |
+|---|---|---|---|
+| `operator` | Head Office | `DATA_OPERATOR` | Everything; can upload but not maintain masters |
+| `division_user` | Northern Division | `ANALYST` | 3 branches, 440 account-days |
+| `district_user` | Jaipur district | `ANALYST` | 2 branches, 426 account-days |
+| `branch_user` | Branch 1 | `VIEWER` | 1 branch, 188 account-days |
+
+A branch user asking for another branch gets **403**, not an empty result — an
+empty result would confirm the filter was valid and let them map the hierarchy
+by watching totals move.
+
+These four are created by the seed **only when `ENVIRONMENT` is not
+`production`**. Change every password before any real deployment; none of these
+belong in a live system.
 
 ---
 
@@ -120,7 +159,8 @@ read time, because an average of averages is not the average.
 
 ## Configuration
 
-Branch hierarchy is an editable CSV, not code:
+Credentials live in `backend/app/cli/seed.py` (`ADMIN_PASSWORD`,
+`DEMO_PASSWORD`). Branch hierarchy is an editable CSV, not code:
 
 ```
 backend/data/branch_mapping.csv

@@ -9,6 +9,7 @@ interface Ctx {
   login: (u: string, p: string) => Promise<void>;
   logout: () => void;
   can: (perm: string) => boolean;
+  refreshMe: () => Promise<void>;
 
   filters: Filters;
   setFilters: (f: Filters | ((p: Filters) => Filters)) => void;
@@ -164,6 +165,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     logout: () => { setToken(null); setMe(null); location.hash = "#/overview"; },
     can: (perm) => Boolean(me?.permissions.includes(perm)),
+    refreshMe: async () => setMe(await api.me()),
     filters, setFilters,
     resetFilters: () => setFilters({}),
     branches, products, divisions, districts, refreshMasters,

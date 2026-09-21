@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import FilterBar from "./components/FilterBar";
 import { Button, Card, Pill } from "./components/ui";
+import { api } from "./api";
 import { AppProvider, currentView, useApp } from "./state";
 import Accounts from "./views/Accounts";
 import Admin from "./views/Admin";
@@ -42,6 +43,9 @@ function Shell() {
     return <Centered><p style={{ color: "var(--text-muted)" }}>Loading…</p></Centered>;
   }
   if (!me) return <Login />;
+  // A seeded password is a shared secret until it is replaced, so the flag
+  // gates the application rather than merely suggesting a change.
+  if (me.must_change_password) return <ForcePasswordChange />;
 
   const visible = NAV.filter((n) => !n.perm || can(n.perm));
   const Current = { daily: Daily, overview: Overview, analytics: Analytics,
@@ -147,6 +151,84 @@ const btn: React.CSSProperties = {
 function Centered({ children }: { children: React.ReactNode }) {
   return <div style={{ display: "grid", placeItems: "center", minHeight: "100vh",
                        background: "var(--page)" }}>{children}</div>;
+}
+
+function ForcePasswordChange() {
+  const { me, refreshMe, logout } = useApp();
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const field: React.CSSProperties = {
+    width: "100%", background: "var(--surface-1)", borderRadius: 8,
+    border: "1px solid var(--border-strong)", padding: "9px 11px", fontSize: 14,
+  };
+  const tooShort = next.length > 0 && next.length < 12;
+  const mismatch = confirm.length > 0 && confirm !== next;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true); setError(null);
+    try {
+      await api.changePassword(current, next);
+      await refreshMe();
+    } catch (err) { setError((err as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <Centered>
+      <div style={{ width: "min(400px, 92vw)" }}>
+        <Card title="Choose a new password"
+              subtitle={`${me!.full_name} — the account is still on its initial password`}>
+          <form onSubmit={submit} style={{ display: "flex", flexDirection: "column",
+                                           gap: 12, padding: "6px 4px 2px" }}>
+            <p style={{ margin: 0, fontSize: 12.5, color: "var(--text-secondary)" }}>
+              The seeded password is known to anyone who can read the setup
+              notes, so it has to be replaced before the account can be used.
+            </p>
+            {([["Current password", current, setCurrent, "current-password"],
+               ["New password", next, setNext, "new-password"],
+               ["Confirm new password", confirm, setConfirm, "new-password"]] as const)
+              .map(([label, value, set, ac]) => (
+              <label key={label} style={{ fontSize: 12 }}>
+                <span style={{ display: "block", marginBottom: 4,
+                               color: "var(--text-muted)" }}>{label}</span>
+                <input style={field} type="password" value={value} autoComplete={ac}
+                       onChange={(e) => set(e.target.value)} />
+              </label>
+            ))}
+            {tooShort && (
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                At least 12 characters.
+              </span>
+            )}
+            {mismatch && (
+              <span style={{ fontSize: 12, color: "var(--status-critical)" }}>
+                The two new passwords do not match.
+              </span>
+            )}
+            {error && (
+              <div style={{ fontSize: 12.5 }}>
+                <Pill tone="critical">Could not change</Pill>
+                <span style={{ marginLeft: 6, color: "var(--text-secondary)" }}>{error}</span>
+              </div>
+            )}
+            <Button type="submit" variant="primary"
+                    disabled={busy || !current || next.length < 12 || next !== confirm}>
+              {busy ? "Saving…" : "Set password and continue"}
+            </Button>
+            <button type="button" onClick={logout} style={{
+              background: "none", border: "none", color: "var(--text-muted)",
+              fontSize: 12, cursor: "pointer", padding: 0, textAlign: "center",
+            }}>Sign out instead</button>
+          </form>
+        </Card>
+      </div>
+    </Centered>
+  );
 }
 
 function Login() {

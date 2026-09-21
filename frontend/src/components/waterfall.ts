@@ -55,8 +55,11 @@ export function waterfallOption(
 
   const span = max - min || Math.abs(max) || 1;
   const pad = span * 0.12;
-  const yMin = min - pad;
-  const yMax = max + pad;
+  // Only pad below zero when the data actually goes there. Otherwise the axis
+  // grows a negative tick that nothing in the chart reaches, which reads as a
+  // loss that did not happen.
+  const yMin = min >= 0 ? 0 : min - pad;
+  const yMax = max <= 0 ? 0 : max + pad;
 
   // Bars are drawn as a transparent spacer stacked under a visible segment, so
   // each one floats between its own lo and hi.
@@ -85,7 +88,7 @@ export function waterfallOption(
   const b = baseOption(t);
   return {
     ...b,
-    grid: { left: 8, right: 16, top: 34, bottom: 6, containLabel: true },
+    grid: { left: 8, right: 16, top: 34, bottom: 10, containLabel: true },
     legend: { show: false },
     tooltip: {
       ...b.tooltip,
@@ -105,8 +108,12 @@ export function waterfallOption(
       ...axisCommon(t),
       splitLine: { show: false },
       axisLabel: {
-        color: t.textSecondary, fontSize: 10.5, interval: 0, lineHeight: 13,
-        width: opts.labelWidth ?? 84, overflow: "break",
+        color: t.textSecondary, fontSize: 10, interval: 0, lineHeight: 12,
+        // Narrow enough that five categories still fit side by side in a
+        // half-width card; longer names wrap rather than run into each other.
+        width: opts.labelWidth ?? 58,
+        overflow: "break",
+        hideOverlap: false,
       },
     },
     yAxis: {

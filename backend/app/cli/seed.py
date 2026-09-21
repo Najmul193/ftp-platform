@@ -24,6 +24,7 @@ from sqlalchemy import select
 
 from app.core.db import session_scope
 from app.core.permissions import PERMISSIONS, ROLES
+from app.core.config import settings
 from app.core.security import hash_password
 from app.domain.types import BranchCategory, LiabilityNature, ScopeLevel, Side
 from app.models import (
@@ -33,6 +34,12 @@ from app.models import (
 )
 
 EFFECTIVE_FROM = date(2026, 1, 1)
+
+#: Bootstrap credentials. The admin account is flagged `must_change_password`,
+#: so the first sign-in has to replace it. The demo accounts exist only to make
+#: scope enforcement visible and are not created when ENVIRONMENT=production.
+ADMIN_PASSWORD = "ChangeMe!2026"
+DEMO_PASSWORD = "Passw0rd!2026x"
 
 #: The branch mapping lives in an editable CSV rather than in code, so the bank
 #: can drop in its real hierarchy without a deployment. Comment lines start "#".
@@ -195,6 +202,26 @@ def seed() -> None:
         ]:
             _get_or_create(s, SystemSetting, {"value": value, "description": desc}, key=key)
 
+        # --- demo accounts, one per scope level -------------------------------- #
+        # Their whole purpose is to make scope enforcement visible: sign in as
+        # each and the same dashboard returns a different slice. They are
+        # created only outside production.
+        def make_user(username, full_name, level, scope_id, roles, password):
+            if s.scalar(select(User).filter_by(username=username)):
+                return
+            u = User(
+                username=username, full_name=full_name,
+                password_hash=hash_password(password),
+                scope_level=level, scope_id=scope_id,
+                must_change_password=False,
+            )
+            s.add(u)
+            s.flush()
+            for rcode in roles:
+                role = s.scalar(select(Role).filter_by(code=rcode))
+                if role:
+                    s.add(UserRole(user_id=u.id, role_id=role.id))
+
         # --- bootstrap HO administrator ---------------------------------------- #
         admin = s.scalar(select(User).filter_by(username="admin"))
         if not admin:
@@ -202,7 +229,7 @@ def seed() -> None:
                 username="admin",
                 full_name="HO Administrator",
                 email="admin@bank.local",
-                password_hash=hash_password("ChangeMe!2026"),
+                password_hash=hash_password(ADMIN_PASSWORD),
                 scope_level=ScopeLevel.HO,
                 scope_id=None,
                 must_change_password=True,
@@ -212,6 +239,32 @@ def seed() -> None:
             for rcode in ("ADMIN", "FTP_MANAGER", "DATA_OPERATOR", "ANALYST"):
                 role = s.scalar(select(Role).filter_by(code=rcode))
                 s.add(UserRole(user_id=admin.id, role_id=role.id))
+
+        if not settings.is_production:
+            first_branch = s.scalar(
+                select(Branch).order_by(Branch.branch_code).limit(1)
+            )
+            first_district = s.scalar(
+                select(District).order_by(District.code).limit(1)
+            )
+            first_division = s.scalar(
+                select(Division).order_by(Division.code).limit(1)
+            )
+            make_user("operator", "Data Operator", ScopeLevel.HO, None,
+                      ("DATA_OPERATOR",), DEMO_PASSWORD)
+            if first_division:
+                make_user("division_user", f"{first_division.name} user",
+                          ScopeLevel.DIVISION, first_division.id,
+                          ("ANALYST",), DEMO_PASSWORD)
+            if first_district:
+                make_user("district_user", f"{first_district.name} district user",
+                          ScopeLevel.DISTRICT, first_district.id,
+                          ("ANALYST",), DEMO_PASSWORD)
+            if first_branch:
+                make_user("branch_user",
+                          f"Branch {first_branch.branch_code} user",
+                          ScopeLevel.BRANCH, first_branch.id,
+                          ("VIEWER",), DEMO_PASSWORD)
 
     print("seed complete")
 
