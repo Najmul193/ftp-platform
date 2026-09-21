@@ -1,0 +1,122 @@
+# Render Blueprint.
+#
+#   Deploy:  push this file, then "New > Blueprint" in the Render dashboard.
+#
+# Two things this deliberately does NOT do, both explained in the plan (§15.10):
+#
+#  1. It stores uploads in object storage (R2/S3), not on a Render disk. A disk
+#     is attached to one instance and is not versioned, and uploaded originals
+#     must be retained immutably for seven years.
+#  2. It runs ingestion in Background Workers, never in the web service. Render
+#     enforces request timeouts and a deploy would kill an in-flight batch.
+#
+# Before the first deploy, set in the dashboard (marked sync:false below):
+#   SECRET_KEY, S3_* credentials.
+# And ENABLE Postgres connection pooling — Celery fan-out will exhaust
+# max_connections long before the database runs out of CPU.
+
+databases:
+  - name: ftp-db
+    databaseName: ftp
+    user: ftp
+    # Choose a paid plan: the free tier has no PITR and no read replica.
+    plan: standard
+    postgresMajorVersion: "16"
+
+services:
+  # ---------------------------------------------------------------- API ----
+  - type: web
+    name: ftp-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: standard
+    numInstances: 2
+    healthCheckPath: /health
+    # Runs before the new version takes traffic, so the schema is never behind
+    # the code. Keep migrations lock-light (see plan §15.17).
+    preDeployCommand: alembic upgrade head
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase: { name: ftp-db, property: connectionString }
+      - key: ENVIRONMENT
+        value: production
+      - key: SECRET_KEY
+        generateValue: true
+      - key: CORS_ORIGINS
+        fromService: { name: ftp-web, type: web, property: hostport }
+      - key: UPLOAD_STORAGE_DIR
+        value: /tmp/uploads
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_ENDPOINT_URL
+        sync: false
+
+  # ------------------------------------------------------------ workers ----
+  # One service per queue: a slow month-end report must not delay tomorrow's
+  # ingestion (plan principle P8).
+  - type: worker
+    name: ftp-worker-ingest
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: standard
+    numInstances: 2
+    dockerCommand: celery -A app.tasks worker -Q parse,validate,commit -c 4
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase: { name: ftp-db, property: connectionString }
+      - key: SECRET_KEY
+        fromService: { name: ftp-api, type: web, envVarKey: SECRET_KEY }
+
+  - type: worker
+    name: ftp-worker-calc
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: standard
+    numInstances: 2
+    dockerCommand: celery -A app.tasks worker -Q calculate,aggregate -c 4
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase: { name: ftp-db, property: connectionString }
+
+  - type: worker
+    name: ftp-worker-report
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: starter
+    dockerCommand: celery -A app.tasks worker -Q report,export -c 2
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase: { name: ftp-db, property: connectionString }
+
+  # --------------------------------------------------------- maintenance ----
+  - type: cron
+    name: ftp-maintenance
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    schedule: "0 2 * * *"
+    dockerCommand: >
+      python -m app.cli.maintenance partitions archive verify-audit-chain reconcile
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase: { name: ftp-db, property: connectionString }
+
+  # ---------------------------------------------------------------- web ----
+  - type: web
+    name: ftp-web
+    runtime: docker
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    plan: starter
+    healthCheckPath: /
+    envVars:
+      - key: API_ORIGIN
+        fromService: { name: ftp-api, type: web, property: hostport }

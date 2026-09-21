@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Start the FTP platform: database, API, and web UI.
 #
-#   ./start.sh            start everything
+#   ./start.sh            start everything from local source
 #   ./start.sh --seed     also (re)apply migrations and seed reference data
 #   ./start.sh --logs     start, then tail the logs
+#   ./start.sh --docker   run the whole stack in containers (docker compose)
 #
 # Each service writes a pid file into var/ so stop.sh can shut it down cleanly.
 
@@ -21,11 +22,13 @@ WEB_PORT="${FTP_WEB_PORT:-5173}"
 
 SEED=0
 TAIL=0
+DOCKER=0
 for arg in "$@"; do
   case "$arg" in
     --seed) SEED=1 ;;
     --logs) TAIL=1 ;;
-    -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
+    --docker) DOCKER=1 ;;
+    -h|--help) sed -n '2,11p' "$0"; exit 0 ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac
 done
@@ -33,6 +36,26 @@ done
 say()  { printf '\033[36m==>\033[0m %s\n' "$1"; }
 ok()   { printf '    \033[32mok\033[0m  %s\n' "$1"; }
 fail() { printf '    \033[31mxx\033[0m  %s\n' "$1" >&2; }
+
+# --- containerised: one command, the same images that deploy to Render -----
+if [ "$DOCKER" = "1" ]; then
+  say "Docker Compose"
+  docker compose up --build -d
+  printf '    waiting for API'
+  for _ in $(seq 1 60); do
+    if curl -fsS "http://127.0.0.1:${API_PORT}/health" >/dev/null 2>&1; then
+      printf '\n'; ok "http://127.0.0.1:${API_PORT}"; break
+    fi
+    printf '.'; sleep 2
+  done
+  echo
+  printf '\033[32mFTP platform is up (containers).\033[0m\n'
+  printf '  Dashboard   http://127.0.0.1:%s\n' "$WEB_PORT"
+  printf '  API docs    http://127.0.0.1:%s/docs\n' "$API_PORT"
+  printf '  Logs        docker compose logs -f\n'
+  printf '  Stop        ./stop.sh --docker\n'
+  exit 0
+fi
 
 # --- already running? ------------------------------------------------------
 running() { [ -f "$1" ] && kill -0 "$(cat "$1")" 2>/dev/null; }

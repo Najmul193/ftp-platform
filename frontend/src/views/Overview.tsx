@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { api } from "../api";
 import Chart, { axisCommon, baseOption, useTokens } from "../components/Chart";
+import { waterfallOption } from "../components/waterfall";
 import {
   Card, Empty, Grid, Pill, Stat, Table, ViewToggle, useView,
 } from "../components/ui";
@@ -23,7 +24,15 @@ export default function Overview() {
   const [wfView, setWfView] = useView();
 
   const s = summary.data;
-  const d = s?.comparison?.deltas;
+  // A delta against an empty prior window is not a 100% rise, it is a missing
+  // comparison. Showing one would invent a trend that does not exist.
+  const comparable = Boolean(s?.comparison?.prior_has_data);
+  const d = comparable ? s?.comparison?.deltas : undefined;
+  const priorNote = s?.comparison
+    ? (comparable
+        ? `vs prior ${s.comparison.prior_period.days}d`
+        : "no earlier data to compare")
+    : undefined;
   const points = trend.data?.points ?? [];
   const spark = points.map((p) => n(p.net_ftp_profit));
 
@@ -32,7 +41,8 @@ export default function Overview() {
     const dates = points.map((p) => p.key as string);
     return {
       ...baseOption(t),
-      grid: { left: 8, right: 18, top: 34, bottom: 4, containLabel: true },
+      // Right padding leaves room for the end label, which otherwise clips.
+      grid: { left: 8, right: 56, top: 34, bottom: 4, containLabel: true },
       legend: { ...baseOption(t).legend, top: 0, left: 0 },
       tooltip: {
         ...baseOption(t).tooltip,
@@ -54,6 +64,9 @@ export default function Overview() {
                axisLabel: { color: t.muted, fontSize: 11,
                             formatter: (v: string) => shortDate(v) } },
       yAxis: { type: "value", ...axisCommon(t), axisLine: { show: false },
+               // Fitted, not zero-anchored: these values sit in a narrow band
+               // and a zero baseline would render every day as the same height.
+               scale: true,
                axisLabel: { color: t.muted, fontSize: 11,
                             formatter: (v: number) => compact(v) } },
       series: [
@@ -124,61 +137,20 @@ export default function Overview() {
   const wfOption = useMemo(() => {
     const comps = waterfall.data?.components ?? [];
     if (!comps.length) return null;
-    const labels = [...comps.map((c) => c.label), "Net FTP"];
-    let run = 0;
-    const base: number[] = [];
-    const rise: number[] = [];
-    const fall: number[] = [];
-    comps.forEach((c) => {
-      const v = n(c.amount);
-      if (v >= 0) { base.push(run); rise.push(v); fall.push(0); run += v; }
-      else { run += v; base.push(run); rise.push(0); fall.push(-v); }
-    });
-    base.push(0); rise.push(0); fall.push(0);
-    const total = n(waterfall.data?.net_ftp_profit);
-
-    return {
-      ...baseOption(t),
-      grid: { left: 8, right: 16, top: 30, bottom: 4, containLabel: true },
-      legend: { show: false },
-      tooltip: {
-        ...baseOption(t).tooltip, trigger: "axis",
-        axisPointer: { type: "shadow" },
-        formatter: (ps: never) => {
-          const arr = ps as unknown as { dataIndex: number; axisValue: string }[];
-          const i = arr[0].dataIndex;
-          if (i === comps.length)
-            return `<b>Net FTP profit</b><br/><b>${money(total)}</b>`;
-          const c = comps[i];
-          return `<b>${c.label}</b><br/>${money(c.amount)}<br/>` +
-            `<span style="color:${t.muted}">${n(c.rate) >= 0 ? "+" : ""}${c.rate} on the book</span>`;
-        },
-      },
-      xAxis: { type: "category", data: labels, ...axisCommon(t),
-               splitLine: { show: false },
-               axisLabel: { color: t.textSecondary, fontSize: 11, interval: 0,
-                            width: 78, overflow: "break" } },
-      yAxis: { type: "value", ...axisCommon(t), axisLine: { show: false },
-               axisLabel: { color: t.muted, fontSize: 11,
-                            formatter: (v: number) => compact(v) } },
-      series: [
-        { name: "base", type: "bar", stack: "w", silent: true,
-          itemStyle: { color: "transparent" }, data: base, barWidth: "52%" },
-        { name: "adds", type: "bar", stack: "w", data: rise,
-          itemStyle: { color: t.series[0], borderRadius: [4, 4, 0, 0] },
-          label: { show: true, position: "top", color: t.textSecondary, fontSize: 10.5,
-                   formatter: (p: { value: number }) => (p.value ? compact(p.value) : "") } },
-        { name: "subtracts", type: "bar", stack: "w", data: fall,
-          itemStyle: { color: t.critical, borderRadius: [0, 0, 4, 4] },
-          label: { show: true, position: "bottom", color: t.textSecondary, fontSize: 10.5,
-                   formatter: (p: { value: number }) => (p.value ? `-${compact(p.value)}` : "") } },
-        { name: "total", type: "bar", data: labels.map((_, i) =>
-            (i === comps.length ? total : 0)),
-          itemStyle: { color: t.series[2], borderRadius: [4, 4, 0, 0] }, barWidth: "52%",
-          label: { show: true, position: "top", color: t.text, fontSize: 11, fontWeight: 600,
-                   formatter: (p: { value: number }) => (p.value ? compact(p.value) : "") } },
-      ],
-    } as never;
+    // Earnings first (largest first), then deductions (largest first): the
+    // waterfall rises to a peak and steps down to the net. Leading with a
+    // negative would dip below zero and recover -- accurate, but far harder to
+    // follow -- and ordering deductions smallest-first buries the one that
+    // actually moved the number.
+    const adds = comps.filter((c) => n(c.amount) >= 0)
+                      .sort((a, b) => n(b.amount) - n(a.amount));
+    const subs = comps.filter((c) => n(c.amount) < 0)
+                      .sort((a, b) => n(a.amount) - n(b.amount));
+    const ordered = [...adds, ...subs];
+    return waterfallOption([
+      ...ordered.map((c) => ({ label: c.label, value: n(c.amount), kind: "delta" as const })),
+      { label: "Net FTP", value: n(waterfall.data?.net_ftp_profit), kind: "total" as const },
+    ], t);
   }, [waterfall.data, t]);
 
   if (summary.error) return <Empty title="Could not load" hint={summary.error} />;
@@ -202,8 +174,7 @@ export default function Overview() {
       <Grid cols="repeat(auto-fit, minmax(200px, 1fr))">
         <Stat label="Net FTP profit" value={money(s?.net_ftp_profit)}
               delta={d?.net_ftp_profit?.change} deltaPct={d?.net_ftp_profit?.change_pct}
-              spark={spark}
-              hint={s?.comparison ? `vs prior ${s.comparison.prior_period.days}d` : undefined} />
+              spark={spark} hint={priorNote} />
         <Stat label="Asset FTP" value={money(s?.asset_ftp_profit)}
               delta={d?.asset_ftp_profit?.change} deltaPct={d?.asset_ftp_profit?.change_pct} />
         <Stat label="Liability FTP" value={money(s?.liability_ftp_profit)}
@@ -212,8 +183,8 @@ export default function Overview() {
         <Stat label="FTP / balance" value={pct(s?.ftp_over_balance_pct, 4)}
               hint="annualised" />
         <Stat label="Total balance" value={compact(s?.total_balance)}
-              delta={d?.total_balance?.change} deltaPct={d?.total_balance?.change_pct}
-              hint="balance-days" />
+              delta={d?.total_balance?.change ? compact(d.total_balance.change) : undefined}
+              deltaPct={d?.total_balance?.change_pct} hint="balance-days" />
         <Stat label="Negative FTP" value={String(s?.negative_ftp_count ?? 0)}
               tone={(s?.negative_ftp_count ?? 0) > 0 ? "bad" : "neutral"}
               hint={`of ${(s?.account_count ?? 0).toLocaleString()} account-days`} />

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { api, Dim } from "../api";
 import Chart, { axisCommon, baseOption, useTokens } from "../components/Chart";
+import { waterfallOption } from "../components/waterfall";
 import { Card, Empty, Grid, MiniButton, Pill, Stat, Table, ViewToggle, useView } from "../components/ui";
 import { compact, longDate, money, n, pct, signed } from "../format";
 import { useApp, useAsync } from "../state";
@@ -27,61 +28,13 @@ export default function Analytics() {
   // ---- variance bridge: waterfall from opening to closing -----------------
   const bridgeOption = useMemo(() => {
     if (!b?.available) return null;
-    const steps = [
-      { label: "Opening", value: n(b.opening_profit), kind: "total" as const },
-      { label: "Volume", value: n(b.volume_effect), kind: "delta" as const },
-      { label: "Rate", value: n(b.rate_effect), kind: "delta" as const },
-      { label: "Interaction", value: n(b.interaction_effect), kind: "delta" as const },
-      { label: "Closing", value: n(b.closing_profit), kind: "total" as const },
-    ];
-    let run = 0;
-    const base: number[] = [], rise: number[] = [], fall: number[] = [], totals: number[] = [];
-    steps.forEach((s) => {
-      if (s.kind === "total") {
-        base.push(0); rise.push(0); fall.push(0); totals.push(s.value);
-        run = s.value;
-      } else {
-        totals.push(0);
-        if (s.value >= 0) { base.push(run); rise.push(s.value); fall.push(0); run += s.value; }
-        else { run += s.value; base.push(run); rise.push(0); fall.push(-s.value); }
-      }
-    });
-    return {
-      ...baseOption(t),
-      grid: { left: 8, right: 16, top: 28, bottom: 4, containLabel: true },
-      legend: { show: false },
-      tooltip: {
-        ...baseOption(t).tooltip, trigger: "axis", axisPointer: { type: "shadow" },
-        formatter: (ps: never) => {
-          const i = (ps as unknown as { dataIndex: number }[])[0].dataIndex;
-          const s = steps[i];
-          return `<b>${s.label}</b><br/>${s.kind === "total" ? money(s.value) : signed(s.value)}`;
-        },
-      },
-      xAxis: { type: "category", data: steps.map((s) => s.label), ...axisCommon(t),
-               splitLine: { show: false },
-               axisLabel: { color: t.textSecondary, fontSize: 11 } },
-      yAxis: { type: "value", ...axisCommon(t), axisLine: { show: false },
-               scale: true,
-               axisLabel: { color: t.muted, fontSize: 11,
-                            formatter: (v: number) => compact(v) } },
-      series: [
-        { type: "bar", stack: "b", silent: true, data: base, barWidth: "50%",
-          itemStyle: { color: "transparent" } },
-        { type: "bar", stack: "b", data: rise, barWidth: "50%",
-          itemStyle: { color: t.series[0], borderRadius: [4, 4, 0, 0] },
-          label: { show: true, position: "top", color: t.textSecondary, fontSize: 10.5,
-                   formatter: (p: { value: number }) => (p.value ? `+${compact(p.value)}` : "") } },
-        { type: "bar", stack: "b", data: fall, barWidth: "50%",
-          itemStyle: { color: t.critical, borderRadius: [0, 0, 4, 4] },
-          label: { show: true, position: "bottom", color: t.textSecondary, fontSize: 10.5,
-                   formatter: (p: { value: number }) => (p.value ? `-${compact(p.value)}` : "") } },
-        { type: "bar", data: totals, barWidth: "50%",
-          itemStyle: { color: t.series[6], borderRadius: [4, 4, 0, 0] },
-          label: { show: true, position: "top", color: t.text, fontSize: 11, fontWeight: 600,
-                   formatter: (p: { value: number }) => (p.value ? compact(p.value) : "") } },
-      ],
-    } as never;
+    return waterfallOption([
+      { label: "Opening", value: n(b.opening_profit), kind: "total" },
+      { label: "Volume", value: n(b.volume_effect), kind: "delta" },
+      { label: "Rate", value: n(b.rate_effect), kind: "delta" },
+      { label: "Interaction", value: n(b.interaction_effect), kind: "delta" },
+      { label: "Closing", value: n(b.closing_profit), kind: "total" },
+    ], t);
   }, [b, t]);
 
   // ---- Pareto: bars + cumulative line, both on ONE axis (percent) --------
@@ -134,7 +87,9 @@ export default function Analytics() {
     const mb = n(scat.data?.median_balance), my = n(scat.data?.median_yield_pct);
     return {
       ...baseOption(t),
-      grid: { left: 8, right: 24, top: 18, bottom: 4, containLabel: true },
+      // Right padding leaves room for the point labels; top padding leaves
+      // room for the y-axis name, which otherwise clips against the card.
+      grid: { left: 8, right: 86, top: 30, bottom: 8, containLabel: true },
       legend: { show: false },
       tooltip: {
         ...baseOption(t).tooltip, trigger: "item",
@@ -148,9 +103,11 @@ export default function Analytics() {
                nameTextStyle: { color: t.muted, fontSize: 11 }, scale: true,
                ...axisCommon(t), axisLabel: { color: t.muted, fontSize: 11,
                  formatter: (v: number) => compact(v) } },
-      yAxis: { type: "value", name: "Yield %", nameTextStyle: { color: t.muted, fontSize: 11 },
+      yAxis: { type: "value", name: "Yield %", nameGap: 12,
+               nameTextStyle: { color: t.muted, fontSize: 11, align: "left" },
                scale: true, ...axisCommon(t), axisLine: { show: false },
-               axisLabel: { color: t.muted, fontSize: 11 } },
+               axisLabel: { color: t.muted, fontSize: 11,
+                            formatter: (v: number) => `${v.toFixed(2)}` } },
       series: [{
         type: "scatter", symbolSize: 16,
         // One hue: the quadrant is carried by position against the median
@@ -164,8 +121,12 @@ export default function Analytics() {
           silent: true, symbol: "none",
           lineStyle: { color: t.axis, width: 1, type: "solid" },
           label: { color: t.muted, fontSize: 10 },
-          data: [{ xAxis: mb, label: { formatter: "median balance" } },
-                 { yAxis: my, label: { formatter: "median yield" } }],
+          // Separated so the two labels cannot land on top of each other at
+          // the crossing point.
+          data: [{ xAxis: mb, label: { formatter: "median balance",
+                                       position: "insideEndTop" } },
+                 { yAxis: my, label: { formatter: "median yield",
+                                       position: "insideStartTop" } }],
         },
       }],
     } as never;
@@ -177,7 +138,7 @@ export default function Analytics() {
     if (!bk.length) return null;
     return {
       ...baseOption(t),
-      grid: { left: 8, right: 16, top: 18, bottom: 4, containLabel: true },
+      grid: { left: 8, right: 16, top: 30, bottom: 8, containLabel: true },
       legend: { show: false },
       tooltip: {
         ...baseOption(t).tooltip, trigger: "axis", axisPointer: { type: "shadow" },
@@ -193,8 +154,10 @@ export default function Analytics() {
                splitLine: { show: false },
                axisLabel: { color: t.muted, fontSize: 10.5, interval: 1 } },
       yAxis: { type: "value", ...axisCommon(t), axisLine: { show: false },
-               name: "% of balance", nameTextStyle: { color: t.muted, fontSize: 11 },
-               axisLabel: { color: t.muted, fontSize: 11, formatter: (v: number) => `${v}%` } },
+               name: "% of balance", nameGap: 12,
+               nameTextStyle: { color: t.muted, fontSize: 11, align: "left" },
+               axisLabel: { color: t.muted, fontSize: 11,
+                            formatter: (v: number) => `${v}%` } },
       series: [{
         type: "bar", data: bk.map((x) => n(x.balance_pct)), barWidth: "88%",
         // Loss-making buckets take the reserved critical colour, paired with
@@ -225,7 +188,10 @@ export default function Analytics() {
       {/* --- variance bridge --- */}
       <Card title={`Why profit moved — by ${dim}`}
             subtitle={b?.available
-              ? `${longDate(b.prior_period!.start)} – ${longDate(b.prior_period!.end)} vs ${longDate(b.current_period!.start)} – ${longDate(b.current_period!.end)}`
+              ? `${longDate(b.prior_period!.start)} – ${longDate(b.prior_period!.end)} vs ${longDate(b.current_period!.start)} – ${longDate(b.current_period!.end)}` +
+                (b.comparison_mode === "split_window"
+                  ? "  ·  no earlier data, so the loaded window is split in half"
+                  : "")
               : "Needs two comparable periods"}
             actions={<ViewToggle view={bView} setView={setBView} />}
             footnote={b?.available

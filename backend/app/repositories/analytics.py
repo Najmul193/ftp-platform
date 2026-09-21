@@ -223,16 +223,34 @@ class AnalyticsRepo:
             return {"available": False, "reason": "no data in the selected window"}
 
         prior_period = period.prior()
-        now = {r["label"]: r for r in self._segments(self._window(f, period), by)}
-        was = {r["label"]: r for r in self._segments(self._window(f, prior_period), by)}
+        current_period = period
+        mode = "preceding_period"
+        was = {r["label"]: r
+               for r in self._segments(self._window(f, prior_period), by)}
+
+        if not was and period.days >= 2:
+            # Nothing loaded before this window -- which is the normal case on a
+            # freshly seeded system. Rather than showing an empty flagship
+            # analytic, split the window that *does* have data down the middle
+            # and compare its halves. The mode is reported so the reader knows
+            # which comparison they are looking at.
+            half = period.days // 2
+            prior_period = Period(period.start,
+                                  period.start + timedelta(days=half - 1))
+            current_period = Period(period.start + timedelta(days=half), period.end)
+            mode = "split_window"
+            was = {r["label"]: r
+                   for r in self._segments(self._window(f, prior_period), by)}
+
+        now = {r["label"]: r
+               for r in self._segments(self._window(f, current_period), by)}
 
         if not was:
             return {
                 "available": False,
                 "reason": (
-                    f"no data in the comparison window "
-                    f"{prior_period.start}..{prior_period.end}; a bridge needs "
-                    "two periods"
+                    f"only {period.days} day(s) of data are available; a bridge "
+                    "needs at least two so one period can be compared to another"
                 ),
                 "current_period": {"start": period.start, "end": period.end},
                 "prior_period": {"start": prior_period.start, "end": prior_period.end},
@@ -293,8 +311,12 @@ class AnalyticsRepo:
         return {
             "available": True,
             "dimension": by,
-            "current_period": {"start": period.start, "end": period.end,
-                               "days": period.days},
+            #: "preceding_period" compares against the window immediately before;
+            #: "split_window" halves the loaded window because nothing precedes it.
+            "comparison_mode": mode,
+            "current_period": {"start": current_period.start,
+                               "end": current_period.end,
+                               "days": current_period.days},
             "prior_period": {"start": prior_period.start, "end": prior_period.end,
                              "days": prior_period.days},
             "opening_profit": opening.quantize(MONEY_Q),

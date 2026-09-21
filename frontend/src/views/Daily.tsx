@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { api } from "../api";
-import Chart, { axisCommon, baseOption, useTokens } from "../components/Chart";
+import Chart, { useTokens } from "../components/Chart";
+import { waterfallOption } from "../components/waterfall";
 import { Card, Empty, Grid, Pill, Stat, Table } from "../components/ui";
 import { compact, longDate, money, n, pct } from "../format";
 import { useApp, useAsync } from "../state";
@@ -24,58 +25,13 @@ export default function Daily() {
   // NII waterfall: customer margin down to what the business units keep.
   const niiOption = useMemo(() => {
     if (!v) return null;
-    const steps = [
+    return waterfallOption([
       { label: "Net interest\nincome", value: n(v.net_interest_income), kind: "total" },
       { label: "Treasury\nfunding", value: n(v.treasury_funding_of_gap), kind: "delta" },
       { label: "Liquidity\npremium", value: n(v.liquidity_premium), kind: "delta" },
       { label: "Other\ncost", value: n(v.other_cost), kind: "delta" },
       { label: "Business\nunits", value: n(v.business_units_total), kind: "total" },
-    ];
-    let run = 0;
-    const base: number[] = [], up: number[] = [], down: number[] = [], tot: number[] = [];
-    steps.forEach((s) => {
-      if (s.kind === "total") {
-        base.push(0); up.push(0); down.push(0); tot.push(s.value); run = s.value;
-      } else {
-        tot.push(0);
-        if (s.value >= 0) { base.push(run); up.push(s.value); down.push(0); run += s.value; }
-        else { run += s.value; base.push(run); up.push(0); down.push(-s.value); }
-      }
-    });
-    return {
-      ...baseOption(t),
-      grid: { left: 8, right: 16, top: 24, bottom: 4, containLabel: true },
-      legend: { show: false },
-      tooltip: {
-        ...baseOption(t).tooltip, trigger: "axis", axisPointer: { type: "shadow" },
-        formatter: (ps: never) => {
-          const i = (ps as unknown as { dataIndex: number }[])[0].dataIndex;
-          const s = steps[i];
-          return `<b>${s.label.replace("\n", " ")}</b><br/>${money(s.value)}`;
-        },
-      },
-      xAxis: { type: "category", data: steps.map((s) => s.label), ...axisCommon(t),
-               splitLine: { show: false },
-               axisLabel: { color: t.textSecondary, fontSize: 10.5, interval: 0,
-                            lineHeight: 13 } },
-      yAxis: { type: "value", ...axisCommon(t), axisLine: { show: false }, scale: true,
-               axisLabel: { color: t.muted, fontSize: 11,
-                            formatter: (x: number) => compact(x) } },
-      series: [
-        { type: "bar", stack: "n", silent: true, data: base, barWidth: "50%",
-          itemStyle: { color: "transparent" } },
-        { type: "bar", stack: "n", data: up, barWidth: "50%",
-          itemStyle: { color: t.series[0], borderRadius: [4, 4, 0, 0] } },
-        { type: "bar", stack: "n", data: down, barWidth: "50%",
-          itemStyle: { color: t.critical, borderRadius: [0, 0, 4, 4] },
-          label: { show: true, position: "bottom", color: t.textSecondary, fontSize: 10.5,
-                   formatter: (p: { value: number }) => (p.value ? `-${compact(p.value)}` : "") } },
-        { type: "bar", data: tot, barWidth: "50%",
-          itemStyle: { color: t.series[2], borderRadius: [4, 4, 0, 0] },
-          label: { show: true, position: "top", color: t.text, fontSize: 11, fontWeight: 600,
-                   formatter: (p: { value: number }) => (p.value ? compact(p.value) : "") } },
-      ],
-    } as never;
+    ], t);
   }, [v, t]);
 
   const toneOf = (s: string) =>
@@ -241,9 +197,13 @@ export default function Daily() {
 
       {summary.data?.comparison && (
         <p style={{ margin: 0, fontSize: 11.5, color: "var(--text-muted)", textAlign: "center" }}>
-          Comparing {longDate(summary.data.comparison.current_period.start)} –{" "}
-          {longDate(summary.data.comparison.current_period.end)} against the preceding{" "}
-          {summary.data.comparison.prior_period.days} days.
+          {summary.data.comparison.prior_has_data
+            ? `Comparing ${longDate(summary.data.comparison.current_period.start)} – ` +
+              `${longDate(summary.data.comparison.current_period.end)} against the ` +
+              `preceding ${summary.data.comparison.prior_period.days} days.`
+            : `Showing ${longDate(summary.data.comparison.current_period.start)} – ` +
+              `${longDate(summary.data.comparison.current_period.end)}. No earlier ` +
+              `data is loaded, so no period comparison is shown.`}
         </p>
       )}
     </div>

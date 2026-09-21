@@ -3,6 +3,7 @@
 #
 #   ./stop.sh          stop the API and web UI, leave PostgreSQL running
 #   ./stop.sh --all    also stop the PostgreSQL container
+#   ./stop.sh --docker stop the docker compose stack
 #   ./stop.sh --purge  also REMOVE the container and its data (destructive)
 
 set -uo pipefail
@@ -13,11 +14,13 @@ DB_CONTAINER="ftp-postgres"
 
 STOP_DB=0
 PURGE=0
+DOCKER=0
 for arg in "$@"; do
   case "$arg" in
     --all) STOP_DB=1 ;;
+    --docker) DOCKER=1 ;;
     --purge) STOP_DB=1; PURGE=1 ;;
-    -h|--help) sed -n '2,7p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,8p' "$0"; exit 0 ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac
 done
@@ -47,6 +50,17 @@ stop_pid() {
   fi
   rm -f "$file"
 }
+
+if [ "$DOCKER" = "1" ]; then
+  printf '\033[36m==>\033[0m %s\n' "Docker Compose"
+  if [ "$PURGE" = "1" ]; then
+    docker compose down -v && printf '    ok  stack and volumes removed\n'
+  else
+    docker compose down && printf '    ok  stack stopped (volumes kept)\n'
+  fi
+  echo; printf '\033[32mFTP platform stopped.\033[0m\n'
+  exit 0
+fi
 
 say "Stopping services"
 stop_pid "Web UI" web.pid

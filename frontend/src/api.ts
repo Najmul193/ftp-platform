@@ -216,6 +216,7 @@ export interface BridgeSegment {
 }
 export interface Bridge {
   available: boolean; reason?: string; dimension?: Dim;
+  comparison_mode?: "preceding_period" | "split_window";
   current_period?: { start: string; end: string; days: number };
   prior_period?: { start: string; end: string; days: number };
   opening_profit?: Num; closing_profit?: Num; total_change?: Num;
