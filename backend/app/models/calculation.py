@@ -234,13 +234,24 @@ class AggDailyProduct(Base, _AggMixin):
 
 
 class AggDailyBranchProduct(Base, _AggMixin):
-    """Powers the branch x product heatmap."""
+    """The finest aggregate grain: branch x product x day.
+
+    Carries the hierarchy alongside the product so cross-dimensional questions
+    -- "which product leads in each district", "top branch per division" --
+    resolve in a single aggregate scan instead of dropping to the fact table.
+    """
 
     __tablename__ = "agg_daily_branch_product"
     branch_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     product_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     branch_code: Mapped[str] = mapped_column(String(10))
     product_code: Mapped[str] = mapped_column(String(40))
+    division_id: Mapped[int] = mapped_column(Integer, index=True)
+    district_id: Mapped[int] = mapped_column(Integer, index=True)
+    branch_category: Mapped[BranchCategory] = mapped_column(
+        pg_enum(BranchCategory, "branch_category")
+    )
+    product_short_name: Mapped[str | None] = mapped_column(String(60))
 
 
 class AggDailyDivision(Base, _AggMixin):
