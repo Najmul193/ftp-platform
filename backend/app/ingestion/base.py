@@ -39,6 +39,11 @@ class ProbeResult:
     errors: list[str] = field(default_factory=list)
     #: True when the file is a rejected-rows workbook this system produced.
     looks_like_rejects_export: bool = False
+    #: The date the single populated sheet's NAME suggests. A hint for the
+    #: operator to confirm, never applied on its own -- a sheet name is a label
+    #: somebody typed, and trusting it silently books a day against the wrong
+    #: date with nothing to catch it.
+    suggested_date: date | None = None
 
     @property
     def included_sheets(self) -> list[SheetInfo]:

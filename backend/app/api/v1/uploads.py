@@ -20,6 +20,7 @@ from app.ingestion.adapters.excel import ExcelAdapter
 from app.ingestion.mapping import LEGACY_WORKBOOK_MAPPING
 from app.models import UploadBatch, UploadException
 from app.services.pipeline import PipelineError, UploadMode, UploadPipeline
+from app.services.batch_delete import BatchDeleteError, BatchDeleteService
 from app.services.rejects import build_rejects_workbook
 
 router = APIRouter(prefix="/uploads", tags=["uploads"])
@@ -76,10 +77,12 @@ def probe(file: UploadFile = File(...)):
         "ok": result.ok,
         "errors": result.errors,
         "header_issues": result.header_issues,
-        "business_dates": [d.isoformat() for d in result.business_dates],
         "total_data_rows": result.total_data_rows,
         "looks_like_rejects_export": result.looks_like_rejects_export,
         "suggested_mode": "merge" if result.looks_like_rejects_export else "replace",
+        # A hint for the operator to confirm, never applied on its own.
+        "suggested_date": (result.suggested_date.isoformat()
+                           if result.suggested_date else None),
         "sheets": [
             {"name": s.name,
              "business_date": s.business_date.isoformat() if s.business_date else None,
@@ -95,7 +98,7 @@ def upload(
     db: DbDep,
     user: UserDep,
     file: UploadFile = File(...),
-    business_date: date | None = Form(None),
+    business_date: date = Form(..., description="Entered by the operator; required"),
     sheet_name: str | None = Form(None),
     auto_commit: bool = Form(True),
     mode: Literal["replace", "merge"] = Form("replace"),
@@ -203,3 +206,53 @@ def download_rejects(batch_ref: str, db: DbDep):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{name}"'},
     )
+
+
+@router.get("/{batch_ref}/deletion-impact",
+            dependencies=[Depends(require("UPLOAD_DELETE"))])
+def deletion_impact(batch_ref: str, db: DbDep, user: UserDep):
+    """What deleting this batch would do, computed without doing it.
+
+    The confirmation dialog is built from this, so the decision is made with
+    the number of rows and the FTP profit at stake on screen rather than after
+    the fact.
+    """
+    svc = BatchDeleteService(db, actor_id=user.id, actor_username=user.username)
+    try:
+        imp = svc.impact(svc.get(batch_ref))
+    except BatchDeleteError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+
+    return {
+        "batch_ref": imp.batch_ref,
+        "deletable": imp.deletable,
+        "blocked_by": imp.blocked_by,
+        "business_dates": imp.business_dates,
+        "bank_rows": imp.bank_rows,
+        "fact_rows": imp.fact_rows,
+        "exception_rows": imp.exception_rows,
+        "staging_rows": imp.staging_rows,
+        "ftp_profit_removed": imp.ftp_profit_removed,
+        "rows_restored": imp.rows_restored,
+        "batches_restored": imp.batches_restored,
+        "dates_left_empty": imp.dates_left_empty,
+    }
+
+
+@router.delete("/{batch_ref}", dependencies=[Depends(require("UPLOAD_DELETE"))])
+def delete_batch(batch_ref: str, db: DbDep, user: UserDep,
+                 reason: str | None = None):
+    """Delete a batch, restore whatever it displaced, and recalculate.
+
+    Held to `UPLOAD_DELETE`, which `DATA_OPERATOR` does not carry: uploading
+    data is routine, removing published figures is not.
+
+    The batch row is genuinely removed; the audit record is not. It keeps the
+    full before-image, so what was deleted, by whom and when outlives the
+    deletion itself.
+    """
+    svc = BatchDeleteService(db, actor_id=user.id, actor_username=user.username)
+    try:
+        return svc.delete(batch_ref, reason=reason)
+    except BatchDeleteError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc

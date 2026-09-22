@@ -134,7 +134,14 @@ export const api = {
     request<Branch[]>(`/branches${qs({}, { include_inactive: includeInactive })}`),
   divisions: () => request<Node_[]>("/divisions"),
   districts: () => request<Node_[]>("/districts"),
-  products: () => request<Product[]>("/products"),
+  products: (includeInactive = false) =>
+    request<Product[]>(`/products${qs({}, { include_inactive: includeInactive })}`),
+  createProduct: (p: NewProduct) =>
+    request<Product>("/products", { method: "POST", body: JSON.stringify(p) }),
+  updateProduct: (code: string, b: Partial<NewProduct> & { is_active?: boolean }) =>
+    request<Product>(`/products/${code}`, { method: "PATCH", body: JSON.stringify(b) }),
+  deleteProduct: (code: string) =>
+    request<{ deleted: boolean }>(`/products/${code}`, { method: "DELETE" }),
   branchUsage: (code: string) => request<BranchUsage>(`/branches/${code}/usage`),
   createBranch: (b: NewBranch) =>
     request<Branch>("/branches", { method: "POST", body: JSON.stringify(b) }),
@@ -153,16 +160,23 @@ export const api = {
     fd.append("file", file);
     return request<Probe>("/uploads/probe", { method: "POST", body: fd });
   },
+  /** `business_date` is required and operator-entered; the server refuses
+   *  without it rather than falling back to the sheet name. */
   upload: (file: File, opts: {
-    business_date?: string; sheet_name?: string; mode?: "replace" | "merge";
+    business_date: string; sheet_name?: string; mode?: "replace" | "merge";
   }) => {
     const fd = new FormData();
     fd.append("file", file);
-    if (opts.business_date) fd.append("business_date", opts.business_date);
+    fd.append("business_date", opts.business_date);
     if (opts.sheet_name) fd.append("sheet_name", opts.sheet_name);
     fd.append("mode", opts.mode ?? "replace");
     return request<UploadResult>("/uploads", { method: "POST", body: fd });
   },
+  deletionImpact: (ref: string) =>
+    request<DeletionImpact>(`/uploads/${ref}/deletion-impact`),
+  deleteBatch: (ref: string, reason?: string) =>
+    request<DeleteResult>(
+      `/uploads/${ref}${qs({}, reason ? { reason } : {})}`, { method: "DELETE" }),
   /** The rejected rows, as a workbook that goes straight back in once the
    *  master data is fixed. Downloaded via fetch so the auth header travels
    *  with it -- a plain link would be unauthenticated. */
@@ -328,7 +342,8 @@ export interface AccountRow {
   product_code: string; side: string; balance: Num; normalized_roi: Num;
   roi_source: string; benchmark_rate: Num; liquidity_cost: Num;
   other_cost: Num; ftp_rate: Num; ftp_income: Num;
-  customer_interest: Num; negative_ftp_flag: boolean;
+  customer_interest: Num; asset_ftp_profit: Num; liability_ftp_profit: Num;
+  negative_ftp_flag: boolean;
 }
 export interface PageOf<T> { items: T[]; total: number; limit: number; offset: number }
 
@@ -352,12 +367,20 @@ export interface Product {
   id: number; product_code: string; short_name: string; details: string | null;
   side: string; liability_nature: string | null; is_active: boolean;
 }
+export interface NewProduct {
+  product_code: string; short_name: string; side: "ASSET" | "LIABILITY";
+  benchmark_rate?: string; liability_nature?: "DEMAND" | "TIME" | null;
+  details?: string | null;
+}
 
 export interface Probe {
   ok: boolean; errors: string[]; header_issues: string[];
-  business_dates: string[]; total_data_rows: number;
+  total_data_rows: number;
   looks_like_rejects_export: boolean;
   suggested_mode: "replace" | "merge";
+  /** The date the sheet NAME suggests. Shown for the operator to confirm; the
+   *  server never applies it on its own. */
+  suggested_date: string | null;
   sheets: { name: string; business_date: string | null; included: boolean;
     reason: string; data_rows: number }[];
 }
@@ -475,4 +498,19 @@ export interface PeriodSummary {
   periods: { label: string; start: string; end: string; net_ftp_profit: Num;
     asset_ftp_profit: Num; liability_ftp_profit: Num; days: number;
     avg_daily: Num; yield_pct: Num }[];
+}
+
+export interface DeletionImpact {
+  batch_ref: string; deletable: boolean; blocked_by: string | null;
+  business_dates: string[]; bank_rows: number; fact_rows: number;
+  exception_rows: number; staging_rows: number;
+  ftp_profit_removed: Num; rows_restored: number;
+  batches_restored: string[]; dates_left_empty: string[];
+}
+export interface DeleteResult {
+  batch_ref: string; deleted: boolean;
+  fact_rows_removed: number; bank_rows_removed: number;
+  ftp_profit_removed: Num; rows_restored: number;
+  batches_restored: string[]; dates_recalculated: string[];
+  dates_emptied: string[];
 }

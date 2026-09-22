@@ -177,6 +177,8 @@ class AccountRow(BaseModel):
     ftp_rate: Decimal
     ftp_income: Decimal
     customer_interest: Decimal
+    asset_ftp_profit: Decimal
+    liability_ftp_profit: Decimal
     negative_ftp_flag: bool
 
 

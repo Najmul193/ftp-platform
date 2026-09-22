@@ -331,7 +331,10 @@ class UploadPipeline:
             # committed and there is no earlier version of them.
             return
 
-        self.s.execute(update(B).where(*scope).values(is_current=False))
+        self.s.execute(
+            update(B).where(*scope)
+            .values(is_current=False, superseded_by_batch_id=batch.id)
+        )
 
         if mode is UploadMode.REPLACE:
             self.s.execute(
@@ -370,6 +373,18 @@ class UploadPipeline:
         )
         self.s.add(run)
         self.s.flush()
+        self.recalculate(run, dates)
+        batch.calculation_run_id = run.id
+        self.s.flush()
+        return run
+
+    def recalculate(self, run: CalculationRun, dates: list[date]) -> CalculationRun:
+        """Rebuild the facts for these dates from every current bank row.
+
+        Driven by the dates alone, not by a batch: after a merge a day is made
+        up of rows from more than one batch, and after a deletion it is made up
+        of whatever survived. Either way the whole date is recomputed.
+        """
 
         # Retire every existing fact for these dates before rebuilding them.
         # This has to happen here rather than in the supersede step: the rebuild
@@ -422,7 +437,7 @@ class UploadPipeline:
                 p = products[rec.product_code]
 
                 facts.append(FtpCalculationResult(
-                    run_id=run.id, batch_id=batch.id, business_date=on,
+                    run_id=run.id, batch_id=rec.batch_id, business_date=on,
                     branch_id=b.id, branch_code=b.branch_code,
                     division_id=b.division_id, district_id=b.district_id,
                     branch_category=b.category,
@@ -461,7 +476,6 @@ class UploadPipeline:
         run.rows_out = len(facts)
         run.status = "COMPLETED"
         run.finished_at = datetime.now(UTC)
-        batch.calculation_run_id = run.id
         self.s.flush()
 
         audit.record(
@@ -476,6 +490,20 @@ class UploadPipeline:
     # ------------------------------------------------------------------ #
     # 7. AGGREGATE
     # ------------------------------------------------------------------ #
+
+    def clear_aggregates(self, dates: list[date]) -> None:
+        """Drop every aggregate row for these dates.
+
+        Used when a date has no data left: without this the dashboard keeps
+        serving totals for rows that no longer exist, which reads as real
+        rather than as a gap.
+        """
+        for model in (AggDailyBranch, AggDailyProduct, AggDailyBranchProduct,
+                      AggDailyDivision, AggDailyDistrict, AggDailyCategory):
+            self.s.execute(
+                model.__table__.delete().where(model.business_date.in_(dates))
+            )
+        self.s.flush()
 
     def refresh_aggregates(self, run: CalculationRun, dates: list[date]) -> None:
         """Rebuild every grain for the affected dates only.

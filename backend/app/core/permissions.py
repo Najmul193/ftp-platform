@@ -16,6 +16,7 @@ PERMISSIONS: dict[str, tuple[str, str]] = {
     "UPLOAD_VIEW": ("ingestion", "View uploads and exceptions"),
     "UPLOAD_CREATE": ("ingestion", "Upload a data file"),
     "UPLOAD_COMMIT": ("ingestion", "Commit a validated batch"),
+    "UPLOAD_DELETE": ("ingestion", "Delete an upload batch and its results"),
     "CALC_RUN": ("calculation", "Run a calculation"),
     "CALC_RECALC_HISTORY": ("calculation", "Recalculate historical dates"),
     "DASH_VIEW": ("dashboard", "View dashboards"),
@@ -47,7 +48,7 @@ ROLES: dict[str, dict] = {
         # rate changes are different duties and should not collapse into one role.
         "permissions": _ANALYST | {
             "USER_VIEW", "USER_CREATE", "USER_EDIT", "USER_DISABLE", "ROLE_GRANT",
-            "AUDIT_VIEW", "MASTER_ORG_VIEW",
+            "AUDIT_VIEW", "MASTER_ORG_VIEW", "UPLOAD_DELETE",
         },
     },
     "FTP_MANAGER": {

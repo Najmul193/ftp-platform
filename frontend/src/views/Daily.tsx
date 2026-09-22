@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { api } from "../api";
+import { useMemo, useState } from "react";
+import { api, type WatchItem } from "../api";
 import Chart, { useTokens } from "../components/Chart";
 import { waterfallOption } from "../components/waterfall";
 import { Card, Empty, Grid, Pill, Stat, Table } from "../components/ui";
@@ -9,7 +9,7 @@ import { useApp, useAsync } from "../state";
 /** The screen a bank runs on in the morning: what needs attention, where the
  *  margin went, and whether the ratios moved. */
 export default function Daily() {
-  const { filters } = useApp();
+  const { filters, me } = useApp();
   const t = useTokens();
 
   const watch = useAsync(() => api.watchlist(filters), [filters]);
@@ -18,6 +18,35 @@ export default function Daily() {
   const periods = useAsync(() => api.periodSummary(filters), [filters]);
   const repricing = useAsync(() => api.repricing(filters), [filters]);
   const summary = useAsync(() => api.summary(filters), [filters]);
+
+  // -- acknowledged watchlist items ---------------------------------------- #
+  // An operator acknowledges an item once and it stops imposing on every
+  // reload; acking is personal, so the set is kept per user in localStorage.
+  const ackKey = `ftp_acked_${me?.username ?? "local"}`;
+  const readAcked = () => {
+    try {
+      return new Set<string>(JSON.parse(localStorage.getItem(ackKey) ?? "[]") as string[]);
+    } catch {
+      return new Set<string>();
+    }
+  };
+  const [acked, setAcked] = useState<Set<string>>(readAcked);
+  const fingerprint = (i: WatchItem) => `${i.severity}:${i.code}:${i.title}`;
+  const writeAcked = (s: Set<string>) => {
+    localStorage.setItem(ackKey, JSON.stringify([...s]));
+    setAcked(s);
+  };
+  const ack = (i: WatchItem) => {
+    const s = new Set(acked);
+    s.add(fingerprint(i));
+    writeAcked(s);
+  };
+  const restore = () => writeAcked(new Set());
+
+  const visibleItems = (watch.data?.items ?? []).filter(
+    (i) => !acked.has(fingerprint(i)));
+  const ackedCount = (watch.data?.items.length ?? 0) - visibleItems.length;
+  const nothingOutstanding = Boolean(watch.data) && visibleItems.length === 0;
 
   const r = ratios.data;
   const v = nii.data;
@@ -43,16 +72,30 @@ export default function Daily() {
       {/* --- what needs attention --- */}
       <Card title="Needs attention"
             subtitle={watch.data
-              ? `${watch.data.count} item${watch.data.count === 1 ? "" : "s"}` +
-                (watch.data.critical_count ? ` · ${watch.data.critical_count} critical` : "")
+              ? `${visibleItems.length} item${visibleItems.length === 1 ? "" : "s"}` +
+                (watch.data.critical_count ? ` · ${watch.data.critical_count} critical` : "") +
+                (ackedCount ? ` · ${ackedCount} acknowledged` : "")
               : undefined}
-            footnote="Ordered by money at stake rather than by rule, so the largest exposure reads first.">
+            actions={ackedCount > 0
+              ? <button onClick={restore} title="Bring all acknowledged items back"
+                        style={{
+                          border: "none", background: "transparent",
+                          color: "var(--text-secondary)", fontSize: 12,
+                          cursor: "pointer", padding: "4px 8px", borderRadius: 6,
+                        }}>
+                  Restore {ackedCount}
+                </button>
+              : undefined}
+            footnote="Ordered by money at stake rather than by rule, so the largest exposure reads first. Acknowledge an item once and it stays hidden for you until it changes.">
         {!watch.data?.items.length
           ? <Empty title="Nothing outstanding"
                    hint="No stale data, no rejected rows, no loss-making products in this slice." />
+          : nothingOutstanding
+            ? <Empty title="Everything acknowledged"
+                     hint="All items for this slice have been acknowledged." />
           : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {watch.data.items.map((item, i) => (
+              {visibleItems.map((item, i) => (
                 <div key={i} style={{
                   display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 10,
                   alignItems: "start", padding: "9px 11px", borderRadius: 8,
@@ -70,12 +113,23 @@ export default function Daily() {
                       {item.detail}
                     </div>
                   </div>
-                  {item.amount && (
-                    <span className="tnum" style={{ fontSize: 12.5, fontWeight: 600,
-                                                    whiteSpace: "nowrap" }}>
-                      {money(item.amount)}
-                    </span>
-                  )}
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    {item.amount && (
+                      <span className="tnum" style={{ fontSize: 12.5, fontWeight: 600,
+                                                      whiteSpace: "nowrap" }}>
+                        {money(item.amount)}
+                      </span>
+                    )}
+                    <button onClick={() => ack(item)} title="Hide this item"
+                            style={{
+                              border: "1px solid var(--border)", background: "transparent",
+                              color: "var(--text-secondary)", fontSize: 11.5,
+                              cursor: "pointer", padding: "3px 9px", borderRadius: 6,
+                              whiteSpace: "nowrap",
+                            }}>
+                      Ack
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

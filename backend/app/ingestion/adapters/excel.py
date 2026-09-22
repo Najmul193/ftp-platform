@@ -66,14 +66,14 @@ class ExcelAdapter(SourceAdapter):
             sheet_name: Read only this worksheet. Needed only to disambiguate a
                 multi-sheet workbook.
 
-        Three supported shapes, in order of how often they occur:
+        The business date is always supplied by the caller. It is deliberately
+        NOT inferred from the sheet name: a sheet called "5 Sep 26" is a label
+        someone typed, and silently trusting it means a mislabelled tab loads a
+        day's figures against the wrong date with nothing to notice it. The
+        parsed name is offered to the operator as a hint and they confirm it.
 
-        * **Daily upload** -- one sheet, one day. If the sheet name parses as a
-          date it is used; otherwise supply `business_date`.
-        * **Targeted upload** -- a multi-sheet workbook plus `sheet_name`.
-        * **Historical backfill** -- neither argument. Every date-named sheet is
-          read and dated from its own name, which is how the legacy workbook's
-          six days load in one pass.
+        `sheet_name` is needed only to disambiguate a workbook with more than
+        one populated sheet.
         """
         self.mapping = mapping
         self.business_date = business_date
@@ -99,21 +99,26 @@ class ExcelAdapter(SourceAdapter):
             return result
 
         try:
-            included, excluded, errors = self._resolve_sheets(list(wb.sheetnames))
-            result.errors.extend(errors)
-            result.sheets.extend(excluded)
-
-            for name, bdate in included:
+            # Probe reports what is in the file; it never decides the date.
+            for name in wb.sheetnames:
                 ws = wb[name]
-                info = SheetInfo(name, bdate, True, "included")
-                info.data_rows = self._count_data_rows(ws)
-                if info.data_rows == 0:
-                    info.included = False
-                    info.reason = "no data rows below the header"
+                rows = self._count_data_rows(ws)
+                hinted = self.mapping.sheet_selector.parse(name)
+                info = SheetInfo(name, hinted, rows > 0,
+                                 "has data" if rows else "no data rows below the header")
+                info.data_rows = rows
                 result.sheets.append(info)
-
-                if info.included:
+                if rows:
                     result.header_issues.extend(self._check_headers(ws, name))
+
+            populated = [s for s in result.sheets if s.data_rows]
+            if not populated:
+                result.errors.append("no worksheet in this file contains data rows")
+            # The date a sheet NAME suggests, offered for the operator to
+            # confirm. Never applied on its own.
+            result.suggested_date = (
+                populated[0].business_date if len(populated) == 1 else None
+            )
 
             # A rejects export carries a "What to fix" sheet. Recognising it
             # lets the UI default to MERGE, so a completion file tops a day up
@@ -148,7 +153,12 @@ class ExcelAdapter(SourceAdapter):
         counter = 0
 
         try:
-            included, _excluded, errors = self._resolve_sheets(list(wb.sheetnames))
+            populated = {
+                n for n in wb.sheetnames if self._count_data_rows(wb[n])
+            }
+            included, _excluded, errors = self._resolve_sheets(
+                list(wb.sheetnames), populated=populated,
+            )
             if errors:
                 raise ValidationError("V001", "; ".join(errors), field="sheet")
 
@@ -179,83 +189,62 @@ class ExcelAdapter(SourceAdapter):
     # ------------------------------------------------------------------ #
 
     def _resolve_sheets(
-        self, sheetnames: list[str]
+        self, sheetnames: list[str], *, populated: set[str] | None = None,
     ) -> tuple[list[tuple[str, date]], list[SheetInfo], list[str]]:
-        """Decide which worksheets are read and what date each one carries.
+        """Decide which worksheet is read, and stamp it with the caller's date.
 
-        Returns `(included, excluded, errors)`. Every sheet lands in `included`
-        or `excluded`; an excluded sheet always carries a reason, because a
-        silently ignored sheet is how a day goes missing unnoticed.
+        Returns `(included, excluded, errors)`. Every sheet lands in one list or
+        the other, and an excluded sheet always carries a reason -- a silently
+        ignored sheet is how a day goes missing unnoticed.
+
+        The date comes from `business_date` and from nowhere else. Sheet names
+        are labels, not facts.
         """
         included: list[tuple[str, date]] = []
         excluded: list[SheetInfo] = []
         errors: list[str] = []
 
-        # --- targeted: one named sheet ---------------------------------- #
+        if self.business_date is None:
+            errors.append(
+                "a business date is required: it is entered by the operator, "
+                "not taken from the sheet name"
+            )
+            return included, excluded, errors
+
+        # --- an explicitly named sheet ------------------------------------ #
         if self.sheet_name is not None:
             if self.sheet_name not in sheetnames:
                 errors.append(
                     f"sheet {self.sheet_name!r} not found; workbook has {sheetnames}"
                 )
                 return included, excluded, errors
-            bdate = self.business_date or self.mapping.sheet_selector.parse(self.sheet_name)
-            if bdate is None:
-                errors.append(
-                    f"cannot determine a business date for sheet {self.sheet_name!r}; "
-                    "supply business_date with the upload"
-                )
-                return included, excluded, errors
-            included.append((self.sheet_name, bdate))
+            included.append((self.sheet_name, self.business_date))
             excluded.extend(
                 SheetInfo(n, None, False, "not the selected sheet")
-                for n in sheetnames
-                if n != self.sheet_name
+                for n in sheetnames if n != self.sheet_name
             )
             return included, excluded, errors
 
-        # --- daily: an explicit date, so the file must be unambiguous ---- #
-        if self.business_date is not None:
-            dated = [n for n in sheetnames if self.mapping.sheet_selector.parse(n)]
-            if len(sheetnames) == 1:
-                included.append((sheetnames[0], self.business_date))
-            elif len(dated) == 1:
-                included.append((dated[0], self.business_date))
-                excluded.extend(
-                    SheetInfo(n, None, False, "sheet name is not a business date")
-                    for n in sheetnames
-                    if n != dated[0]
-                )
-            else:
-                errors.append(
-                    f"business_date was supplied but the workbook has "
-                    f"{len(sheetnames)} worksheets ({len(dated)} date-named); "
-                    "specify sheet_name, or omit business_date to load every "
-                    "date-named sheet"
-                )
-            return included, excluded, errors
-
-        # --- backfill: every date-named sheet, dated from its own name --- #
-        for name in sheetnames:
-            bdate = self.mapping.sheet_selector.parse(name)
-            if bdate is None:
-                excluded.append(
-                    SheetInfo(name, None, False, "sheet name is not a business date")
-                )
-            else:
-                included.append((name, bdate))
-
-        if not included:
-            hint = (
-                f"no worksheet name parsed as a date (tried "
-                f"{list(self.mapping.sheet_selector.patterns)})."
+        # --- otherwise the workbook has to be unambiguous ----------------- #
+        candidates = (
+            [n for n in sheetnames if n in populated] if populated is not None
+            else list(sheetnames)
+        )
+        if len(candidates) == 1:
+            included.append((candidates[0], self.business_date))
+            excluded.extend(
+                SheetInfo(n, None, False, "no data rows" if populated is not None
+                          else "not the selected sheet")
+                for n in sheetnames if n != candidates[0]
             )
-            if len(sheetnames) == 1:
-                hint += (
-                    f" The workbook has a single sheet {sheetnames[0]!r} -- supply "
-                    "business_date with the upload to load it as a daily file."
-                )
-            errors.append(hint)
-
+        elif not candidates:
+            errors.append("no worksheet in this file contains data rows")
+        else:
+            errors.append(
+                f"this workbook has {len(candidates)} sheets with data "
+                f"({', '.join(candidates[:6])}"
+                f"{'…' if len(candidates) > 6 else ''}); choose which one to load"
+            )
         return included, excluded, errors
 
     def _is_structural(self, values: tuple[Any, ...]) -> bool:

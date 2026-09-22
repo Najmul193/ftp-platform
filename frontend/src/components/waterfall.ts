@@ -31,38 +31,46 @@ export function waterfallOption(
 ): EChartsOption {
   const fmt = opts.valueFormatter ?? compact;
 
-  // Walk the steps once to find every segment's extent.
+  // Walk the steps once to find every segment's extent. Anchors are pinned at
+  // their value (the far edge is 0 by definition), deltas float between the
+  // running totals — zero itself is never a plot feature, so it takes no part
+  // in fitting the axis.
   const segments: { lo: number; hi: number }[] = [];
   let running = 0;
   let min = Infinity;
   let max = -Infinity;
+  const grow = (v: number) => {
+    if (v < min) min = v;
+    if (v > max) max = v;
+  };
 
   steps.forEach((s) => {
     if (s.kind === "total") {
       running = s.value;
       segments.push({ lo: Math.min(0, s.value), hi: Math.max(0, s.value) });
-      min = Math.min(min, 0, s.value);
-      max = Math.max(max, 0, s.value);
+      grow(s.value);
     } else {
       const lo = Math.min(running, running + s.value);
       const hi = Math.max(running, running + s.value);
       segments.push({ lo, hi });
+      grow(lo);
+      grow(hi);
       running += s.value;
-      min = Math.min(min, lo);
-      max = Math.max(max, hi);
     }
   });
 
   const span = max - min || Math.abs(max) || 1;
   const pad = span * 0.12;
-  // Only pad below zero when the data actually goes there. Otherwise the axis
-  // grows a negative tick that nothing in the chart reaches, which reads as a
-  // loss that did not happen.
-  const yMin = min >= 0 ? 0 : min - pad;
-  const yMax = max <= 0 ? 0 : max + pad;
+  // Fitting band rather than anchoring at zero: an anchor IS a full span from
+  // zero, so its zero-tail simply runs off the bottom of the plot. Only pad
+  // below zero when the data actually goes there, otherwise the axis grows a
+  // negative tick that nothing in the chart reaches.
+  const yMin = min >= 0 ? Math.max(0, min - pad) : min - pad;
+  const yMax = max <= 0 ? Math.min(0, max + pad) : max + pad;
 
-  // Bars are drawn as a transparent spacer stacked under a visible segment, so
-  // each one floats between its own lo and hi.
+  // Everything — anchors included — is a segment in one stack, so bars float
+  // exactly between their own lo and hi and adjacent steps always touch. The
+  // invisible spacer under each visible segment is what parks the bar on lo.
   const base: number[] = [];
   const rise: number[] = [];
   const fall: number[] = [];
@@ -71,8 +79,11 @@ export function waterfallOption(
   steps.forEach((s, i) => {
     const { lo, hi } = segments[i];
     if (s.kind === "total") {
-      base.push(0); rise.push(0); fall.push(0);
-      totals.push(hi - yMin);
+      // Anchor spans 0..value: its spacer parks the bar at zero, its tail below
+      // the fitted axis is clipped at the plot floor.
+      base.push(lo - yMin);
+      rise.push(0); fall.push(0);
+      totals.push(hi - lo);
     } else {
       totals.push(0);
       base.push(lo - yMin);
@@ -131,25 +142,32 @@ export function waterfallOption(
     },
     series: [
       { type: "bar", stack: "w", silent: true, data: base.map((v) => v + yMin),
-        itemStyle: { color: "transparent" }, barWidth: "52%" },
+        itemStyle: { color: "transparent" }, barWidth: "52%", clip: true },
       { type: "bar", stack: "w", name: "increase", data: rise, barWidth: "52%",
+        clip: true,
         itemStyle: { color: t.series[0], borderRadius: [4, 4, 0, 0] },
         label: { show: true, position: "top", color: t.textSecondary, fontSize: 10.5,
                  formatter: (p: { dataIndex: number; value: number }) =>
                    (p.value ? labelFor(p.dataIndex) : "") } },
       { type: "bar", stack: "w", name: "decrease", data: fall, barWidth: "52%",
+        clip: true,
         itemStyle: { color: t.diverging[5], borderRadius: [0, 0, 4, 4] },
         label: { show: true, position: "bottom", color: t.textSecondary, fontSize: 10.5,
                  formatter: (p: { dataIndex: number; value: number }) =>
                    (p.value ? labelFor(p.dataIndex) : "") } },
       // Anchors take a neutral dark step: they are structure, not direction, so
       // the only hues carrying meaning are the increase/decrease pair.
-      { type: "bar", name: "total", data: totals, barWidth: "52%",
+      { type: "bar", stack: "w", name: "total", data: totals, barWidth: "52%",
+        clip: true,
         itemStyle: { color: t.sequential[3], borderRadius: [4, 4, 0, 0] },
         label: { show: true, position: "top", color: t.text, fontSize: 11,
                  fontWeight: 600,
                  formatter: (p: { dataIndex: number; value: number }) =>
                    (p.value ? labelFor(p.dataIndex) : "") } },
     ],
+    // Adjacent steps sit so close that their value labels would collide at the
+    // seam (a fall's bottom label beside the next anchor's top label): let the
+    // layout engine shift one out of the way instead of letting them overlap.
+    labelLayout: { hideOverlap: false, moveOverlap: "shiftY" },
   } as EChartsOption;
 }

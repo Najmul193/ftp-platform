@@ -101,6 +101,8 @@ def accounts(
                 liquidity_cost=r.liquidity_cost, other_cost=r.other_cost,
                 ftp_rate=r.ftp_rate, ftp_income=r.ftp_income,
                 customer_interest=r.customer_interest,
+                asset_ftp_profit=r.asset_ftp_profit,
+                liability_ftp_profit=r.liability_ftp_profit,
                 negative_ftp_flag=r.negative_ftp_flag,
             ).model_dump()
             for r in rows

@@ -5,6 +5,8 @@ import { api } from "./api";
 import { AppProvider, currentView, useApp } from "./state";
 import Accounts from "./views/Accounts";
 import Admin from "./views/Admin";
+import BasicOverview from "./views/BasicOverview";
+import Consolidated from "./views/Consolidated";
 import Analytics from "./views/Analytics";
 import Daily from "./views/Daily";
 import Leaders from "./views/Leaders";
@@ -12,6 +14,8 @@ import Overview from "./views/Overview";
 import Upload from "./views/Upload";
 
 const NAV = [
+  { id: "basic", label: "Basic overview", group: "Analyse" },
+  { id: "consolidated", label: "Consolidated", group: "Analyse" },
   { id: "daily", label: "Daily", group: "Analyse" },
   { id: "overview", label: "Overview", group: "Analyse" },
   { id: "analytics", label: "Analytics", group: "Analyse" },
@@ -48,7 +52,8 @@ function Shell() {
   if (me.must_change_password) return <ForcePasswordChange />;
 
   const visible = NAV.filter((n) => !n.perm || can(n.perm));
-  const Current = { daily: Daily, overview: Overview, analytics: Analytics,
+  const Current = { basic: BasicOverview, consolidated: Consolidated,
+                    daily: Daily, overview: Overview, analytics: Analytics,
                     leaders: Leaders, accounts: Accounts, upload: Upload,
                     admin: Admin }[view] ?? Daily;
 

@@ -166,6 +166,10 @@ class BankDailyAccountData(Base):
     source_row_no: Mapped[int | None] = mapped_column(Integer)
     validation_status: Mapped[str] = mapped_column(String(10), server_default=text("'OK'"))
     is_current: Mapped[bool] = mapped_column(server_default=text("true"))
+    #: Which batch retired this row. Recorded per row rather than inferred from
+    #: the date, because a MERGE retires only the account-days it contains --
+    #: without this, undoing a batch could not tell which rows to bring back.
+    superseded_by_batch_id: Mapped[int | None] = mapped_column(BigInteger)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()")
     )

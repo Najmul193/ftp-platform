@@ -1,14 +1,19 @@
 import { useRef, useState } from "react";
-import { api, Probe, UploadResult } from "../api";
+import { api, Batch, DeletionImpact, Probe, UploadResult } from "../api";
 import { Button, Card, Empty, Grid, MiniButton, Pill, Stat, Table } from "../components/ui";
 import type { ExceptionRow } from "../api";
-import { longDate } from "../format";
+import { longDate, money } from "../format";
 import { useApp, useAsync } from "../state";
 
 type Stage = "idle" | "probing" | "probed" | "uploading" | "done" | "error";
 
 export default function Upload() {
   const { can, refreshData } = useApp();
+  const [deleting, setDeleting] = useState<DeletionImpact | null>(null);
+  const [deleteReason, setDeleteReason] = useState("");
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [historyKey, setHistoryKey] = useState(0);
   const [file, setFile] = useState<File | null>(null);
   const [probe, setProbe] = useState<Probe | null>(null);
   const [result, setResult] = useState<UploadResult | null>(null);
@@ -20,7 +25,7 @@ export default function Upload() {
   const [drag, setDrag] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const batches = useAsync(() => api.batches(), [stage === "done"]);
+  const batches = useAsync(() => api.batches(), [stage === "done", historyKey]);
   const exceptions = useAsync(
     () => (result ? api.batchExceptions(result.batch_ref) : Promise.resolve([])),
     [result?.batch_ref],
@@ -42,13 +47,12 @@ export default function Upload() {
       // A completion file tops a day up; replacing on one would delete the rows
       // that loaded fine and leave only the corrected handful.
       setMode(p.suggested_mode);
-      // A single qualifying sheet is the common daily case -- preselect it so
-      // the operator confirms rather than retypes.
-      const included = p.sheets.filter((s) => s.included);
-      if (included.length === 1) {
-        setSheet(included[0].name);
-        if (included[0].business_date) setBusinessDate(included[0].business_date);
-      }
+      // Preselect the sheet when there is only one with data, but NOT the
+      // date: that stays blank and has to be typed. A sheet name is a label
+      // somebody entered, and accepting it silently books the figures against
+      // whatever date the tab happens to claim.
+      const withData = p.sheets.filter((s) => s.data_rows > 0);
+      if (withData.length === 1) setSheet(withData[0].name);
     } catch (e) {
       setError((e as Error).message); setStage("error");
     }
@@ -59,7 +63,7 @@ export default function Upload() {
     setStage("uploading"); setError(null);
     try {
       const r = await api.upload(file, {
-        business_date: businessDate || undefined,
+        business_date: businessDate,
         sheet_name: sheet || undefined,
         mode,
       });
@@ -78,8 +82,38 @@ export default function Upload() {
                   hint="Uploading data needs the UPLOAD_CREATE permission." />;
   }
 
-  const included = probe?.sheets.filter((s) => s.included) ?? [];
-  const multiDate = included.length > 1;
+  const sheetsWithData = probe?.sheets.filter((s) => s.data_rows > 0) ?? [];
+
+  async function askDelete(ref: string) {
+    setNotice(null);
+    try {
+      setDeleting(await api.deletionImpact(ref));
+      setDeleteReason("");
+    } catch (e) { setNotice((e as Error).message); }
+  }
+
+  async function confirmDelete() {
+    if (!deleting) return;
+    setDeleteBusy(true);
+    try {
+      const r = await api.deleteBatch(deleting.batch_ref, deleteReason || undefined);
+      setNotice(
+        `Deleted ${r.batch_ref}: removed ${r.fact_rows_removed.toLocaleString()} ` +
+        `calculated rows worth ${money(r.ftp_profit_removed)}` +
+        (r.rows_restored
+          ? `, restored ${r.rows_restored.toLocaleString()} rows from ` +
+            `${r.batches_restored.join(", ")}` : "") +
+        (r.dates_recalculated.length
+          ? `, recalculated ${r.dates_recalculated.join(", ")}` : "") +
+        (r.dates_emptied.length
+          ? `. ${r.dates_emptied.join(", ")} now has no data.` : "."),
+      );
+      setDeleting(null);
+      setHistoryKey((k) => k + 1);
+      refreshData();
+    } catch (e) { setNotice((e as Error).message); }
+    finally { setDeleteBusy(false); }
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -136,16 +170,20 @@ export default function Upload() {
                    cols={[
                      { key: "name", label: "Sheet" },
                      { key: "inc", label: "Status",
-                       render: (r) => r.included
-                         ? <Pill tone="good">will load</Pill>
-                         : <Pill tone="neutral">skipped</Pill>,
-                       value: (r) => (r.included ? "included" : "skipped") },
-                     { key: "d", label: "Business date",
-                       render: (r) => (r.business_date ? longDate(r.business_date) : "—"),
-                       value: (r) => r.business_date },
+                       render: (r) => r.data_rows > 0
+                         ? <Pill tone="good">has data</Pill>
+                         : <Pill tone="neutral">empty</Pill>,
+                       value: (r) => (r.data_rows > 0 ? "has data" : "empty") },
                      { key: "rows", label: "Data rows", align: "right",
                        render: (r) => r.data_rows.toLocaleString(),
                        value: (r) => r.data_rows },
+                     { key: "d", label: "Name suggests",
+                       render: (r) => (r.business_date
+                         ? <span style={{ color: "var(--text-muted)" }}>
+                             {longDate(r.business_date)}
+                           </span>
+                         : "—"),
+                       value: (r) => r.business_date },
                      { key: "why", label: "Reason", render: (r) => r.reason },
                    ]} />
 
@@ -176,6 +214,31 @@ export default function Upload() {
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap",
                           alignItems: "flex-end", marginTop: 14 }}>
               <div>
+                <label htmlFor="up-date"
+                       style={{ display: "block", color: "var(--text-muted)",
+                                fontSize: 10.5, fontWeight: 600, letterSpacing: ".05em",
+                                textTransform: "uppercase", marginBottom: 4 }}>
+                  Business date <span style={{ color: "var(--status-critical)" }}>*</span>
+                </label>
+                <input id="up-date" type="date" value={businessDate} required
+                       onChange={(e) => setBusinessDate(e.target.value)}
+                       style={{ background: "var(--surface-1)", borderRadius: 7,
+                                border: `1px solid ${businessDate
+                                  ? "var(--border-strong)" : "var(--status-critical)"}`,
+                                padding: "6px 9px", fontSize: 12.5 }} />
+                {probe.suggested_date && (
+                  <div style={{ marginTop: 4 }}>
+                    <button type="button"
+                            onClick={() => setBusinessDate(probe.suggested_date!)}
+                            style={{ background: "none", border: "none", padding: 0,
+                                     fontSize: 11, color: "var(--series-1)",
+                                     cursor: "pointer", textDecoration: "underline" }}>
+                      the sheet is named {longDate(probe.suggested_date)} — use it
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div>
                 <span style={{ display: "block", color: "var(--text-muted)",
                                fontSize: 10.5, fontWeight: 600, letterSpacing: ".05em",
                                textTransform: "uppercase", marginBottom: 4 }}>
@@ -192,47 +255,34 @@ export default function Upload() {
                   </MiniButton>
                 </div>
               </div>
-              {multiDate ? (
-                <p style={{ margin: 0, fontSize: 12.5, color: "var(--text-secondary)" }}>
-                  {included.length} dated sheets will load as a backfill
-                  ({probe.total_data_rows.toLocaleString()} rows).
-                </p>
-              ) : (
-                <>
-                  <label style={{ fontSize: 12 }}>
-                    <span style={{ display: "block", color: "var(--text-muted)",
-                                   fontSize: 10.5, fontWeight: 600, letterSpacing: ".05em",
-                                   textTransform: "uppercase", marginBottom: 3 }}>
-                      Business date
-                    </span>
-                    <input type="date" value={businessDate}
-                           onChange={(e) => setBusinessDate(e.target.value)}
-                           style={{ background: "var(--surface-1)", borderRadius: 7,
-                                    border: "1px solid var(--border-strong)",
-                                    padding: "6px 9px", fontSize: 12.5 }} />
+              {sheetsWithData.length > 1 && (
+                <div>
+                  <label htmlFor="up-sheet"
+                         style={{ display: "block", color: "var(--text-muted)",
+                                  fontSize: 10.5, fontWeight: 600, letterSpacing: ".05em",
+                                  textTransform: "uppercase", marginBottom: 4 }}>
+                    Sheet <span style={{ color: "var(--status-critical)" }}>*</span>
                   </label>
-                  <label style={{ fontSize: 12 }}>
-                    <span style={{ display: "block", color: "var(--text-muted)",
-                                   fontSize: 10.5, fontWeight: 600, letterSpacing: ".05em",
-                                   textTransform: "uppercase", marginBottom: 3 }}>
-                      Sheet
-                    </span>
-                    <select value={sheet} onChange={(e) => setSheet(e.target.value)}
-                            style={{ background: "var(--surface-1)", borderRadius: 7,
-                                     border: "1px solid var(--border-strong)",
-                                     padding: "6px 9px", fontSize: 12.5 }}>
-                      <option value="">auto-detect</option>
-                      {probe.sheets.map((s) => (
-                        <option key={s.name} value={s.name}>{s.name}</option>
-                      ))}
-                    </select>
-                  </label>
-                </>
+                  <select id="up-sheet" value={sheet}
+                          onChange={(e) => setSheet(e.target.value)}
+                          style={{ background: "var(--surface-1)", borderRadius: 7,
+                                   border: `1px solid ${sheet
+                                     ? "var(--border-strong)" : "var(--status-critical)"}`,
+                                   padding: "6px 9px", fontSize: 12.5 }}>
+                    <option value="">choose…</option>
+                    {sheetsWithData.map((s) => (
+                      <option key={s.name} value={s.name}>
+                        {s.name} ({s.data_rows.toLocaleString()} rows)
+                      </option>
+                    ))}
+                  </select>
+                </div>
               )}
               <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
                 <Button onClick={reset}>Cancel</Button>
                 <Button variant="primary" onClick={submit}
-                        disabled={!probe.ok || stage === "uploading"}>
+                        disabled={!probe.ok || !businessDate || stage === "uploading"
+                                  || (sheetsWithData.length > 1 && !sheet)}>
                   {stage === "uploading" ? "Processing…" : "Load and calculate"}
                 </Button>
               </div>
@@ -342,6 +392,105 @@ export default function Upload() {
         )}
       </Card>
 
+      {notice && (
+        <Card>
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-start",
+                        padding: "2px 4px" }}>
+            <Pill tone="info">Done</Pill>
+            <span style={{ fontSize: 12.5, color: "var(--text-secondary)" }}>
+              {notice}
+            </span>
+          </div>
+        </Card>
+      )}
+
+      {deleting && (
+        <Card title={`Delete batch ${deleting.batch_ref}?`}
+              subtitle={deleting.deletable
+                ? "This removes published figures. The audit record survives it."
+                : "This batch cannot be deleted yet"}>
+          {!deleting.deletable ? (
+            <>
+              <Pill tone="critical">Blocked</Pill>
+              <p style={{ margin: "8px 0 0", fontSize: 12.5,
+                          color: "var(--text-secondary)" }}>
+                {deleting.blocked_by}
+              </p>
+              <div style={{ marginTop: 12 }}>
+                <Button onClick={() => setDeleting(null)}>Close</Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <Grid cols="repeat(auto-fit, minmax(140px, 1fr))" gap={10}>
+                <Stat label="Calculated rows"
+                      value={deleting.fact_rows.toLocaleString()} tone="bad" />
+                <Stat label="FTP profit removed"
+                      value={money(deleting.ftp_profit_removed)} tone="bad" />
+                <Stat label="Raw rows"
+                      value={deleting.bank_rows.toLocaleString()} />
+                <Stat label="Rows restored"
+                      value={deleting.rows_restored.toLocaleString()}
+                      tone={deleting.rows_restored ? "good" : "neutral"}
+                      hint={deleting.batches_restored.length
+                        ? `from ${deleting.batches_restored.join(", ")}` : undefined} />
+              </Grid>
+
+              <ul style={{ margin: "12px 0 0", paddingLeft: 18, fontSize: 12.5,
+                           color: "var(--text-secondary)", lineHeight: 1.7 }}>
+                <li>
+                  Affects {deleting.business_dates.map(longDate).join(", ")} — each
+                  is recalculated from whatever remains.
+                </li>
+                {deleting.rows_restored > 0 && (
+                  <li>
+                    {deleting.rows_restored.toLocaleString()} rows this batch
+                    replaced are put back, and{" "}
+                    {deleting.batches_restored.join(", ")} becomes current again.
+                  </li>
+                )}
+                {deleting.dates_left_empty.length > 0 && (
+                  <li style={{ color: "var(--status-critical)" }}>
+                    <b>{deleting.dates_left_empty.map(longDate).join(", ")}</b> will
+                    be left with no data at all.
+                  </li>
+                )}
+              </ul>
+
+              <label style={{ display: "block", marginTop: 12, fontSize: 12 }}>
+                <span style={{ display: "block", color: "var(--text-muted)",
+                               fontSize: 10.5, fontWeight: 600, letterSpacing: ".05em",
+                               textTransform: "uppercase", marginBottom: 4 }}>
+                  Reason (recorded in the audit trail)
+                </span>
+                <input value={deleteReason}
+                       onChange={(e) => setDeleteReason(e.target.value)}
+                       placeholder="e.g. loaded against the wrong business date"
+                       style={{ width: "100%", maxWidth: 520,
+                                background: "var(--surface-1)", borderRadius: 7,
+                                border: "1px solid var(--border-strong)",
+                                padding: "7px 10px", fontSize: 13 }} />
+              </label>
+
+              <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                <Button variant="danger" onClick={confirmDelete}
+                        disabled={deleteBusy || !deleteReason.trim()}>
+                  {deleteBusy ? "Deleting…" : "Delete and recalculate"}
+                </Button>
+                <Button onClick={() => setDeleting(null)}>Cancel</Button>
+              </div>
+              {!deleteReason.trim() && (
+                <p style={{ margin: "7px 0 0", fontSize: 11.5,
+                            color: "var(--text-muted)" }}>
+                  A reason is required: the deletion outlives the batch in the
+                  audit trail, and a bare record of it is no use six months on.
+                </p>
+              )}
+            </>
+          )}
+        </Card>
+      )}
+
       <Card title="Upload history"
             subtitle="Every file, what it replaced, and what it produced"
             footnote="A superseded batch is retained and remains queryable; dashboards read only the current one.">
@@ -371,6 +520,15 @@ export default function Upload() {
                    render: (r) => new Date(r.uploaded_at).toLocaleString("en-GB",
                      { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }),
                    value: (r) => r.uploaded_at },
+                 ...(can("UPLOAD_DELETE") ? [{
+                   key: "act", label: "", align: "right" as const,
+                   render: (r: Batch) => (
+                     <MiniButton onClick={() => askDelete(r.batch_ref)}
+                                 title="Delete this batch and recalculate">
+                       Delete
+                     </MiniButton>
+                   ),
+                 }] : []),
                ]} />
       </Card>
     </div>

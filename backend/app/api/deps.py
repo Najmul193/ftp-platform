@@ -70,6 +70,10 @@ def get_current_user(
         raise _unauthorised("user is inactive")
 
     roles = frozenset(ur.role.code for ur in user.roles)
+    return _build(user, roles)
+
+
+def _build(user: User, roles: frozenset[str]) -> CurrentUser:
     return CurrentUser(
         id=user.id, username=user.username, full_name=user.full_name,
         scope_level=user.scope_level, scope_id=user.scope_id,
@@ -80,10 +84,32 @@ def get_current_user(
 UserDep = Annotated[CurrentUser, Depends(get_current_user)]
 
 
+def get_active_user(
+    db: DbDep,
+    authorization: Annotated[str | None, Header()] = None,
+) -> CurrentUser:
+    """A caller who has completed account setup.
+
+    The forced password change is enforced here, not only in the UI. Gating it
+    client-side alone would leave the API serving a user still on the seeded
+    password to anyone holding a token -- which is exactly the situation the
+    flag exists to prevent.
+    """
+    user = get_current_user(db, authorization)
+    row = db.get(User, user.id)
+    if row is not None and row.must_change_password:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "this account is still on its initial password; set a new one at "
+            "POST /auth/password/change before using the API",
+        )
+    return user
+
+
 def require(*permissions: str):
     """Route guard. All listed permissions must be held."""
 
-    def _guard(user: UserDep) -> CurrentUser:
+    def _guard(user: Annotated[CurrentUser, Depends(get_active_user)]) -> CurrentUser:
         missing = [p for p in permissions if not user.has(p)]
         if missing:
             raise HTTPException(
@@ -95,7 +121,9 @@ def require(*permissions: str):
     return _guard
 
 
-def get_scope(db: DbDep, user: UserDep) -> ScopeFilter:
+def get_scope(
+    db: DbDep, user: Annotated[CurrentUser, Depends(get_active_user)]
+) -> ScopeFilter:
     """Resolve the caller's visible branches once per request."""
     branches = [
         ScopeBranch(b.id, b.branch_code, b.district_id, b.division_id or 0)
