@@ -39,6 +39,7 @@ COPY --chown=ftp:ftp alembic.ini ./
 COPY --chown=ftp:ftp alembic ./alembic
 COPY --chown=ftp:ftp app ./app
 COPY --chown=ftp:ftp data ./data
+COPY --chown=ftp:ftp docker-entrypoint.sh ./
 
 USER ftp
 
@@ -52,4 +53,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD curl -fsS "http://127.0.0.1:${PORT:-8000}/health" || exit 1
 
-CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# One token, no shell metacharacters: a hosting platform's command field can be
+# left empty, and nothing has to survive its quoting rules.
+CMD ["./docker-entrypoint.sh"]
