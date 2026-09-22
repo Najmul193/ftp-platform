@@ -19,11 +19,11 @@ import Upload from "./views/Upload";
 const NAV = [
   { id: "daily", label: "Daily", group: "Analyse" },
   { id: "basic", label: "Basic overview", group: "Analyse" },
-  { id: "consolidated", label: "Consolidated", group: "Analyse" },
   { id: "overview", label: "Overview", group: "Analyse" },
   { id: "analytics", label: "Analytics", group: "Analyse" },
   { id: "leaders", label: "Leaders", group: "Analyse" },
   { id: "accounts", label: "Accounts", group: "Analyse" },
+  { id: "consolidated", label: "Consolidated", group: "Analyse" },
   { id: "upload", label: "Upload", group: "Operate", perm: "UPLOAD_VIEW" },
   { id: "admin", label: "Master data", group: "Operate", perm: "MASTER_BRANCH_VIEW" },
 ];
