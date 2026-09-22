@@ -42,13 +42,6 @@ DEFAULT_ADMIN_PASSWORD = "ChangeMe!2026"
 ADMIN_PASSWORD = os.environ.get("FTP_ADMIN_PASSWORD") or DEFAULT_ADMIN_PASSWORD
 DEMO_PASSWORD = "Passw0rd!2026x"
 
-if settings.is_production and ADMIN_PASSWORD == DEFAULT_ADMIN_PASSWORD:
-    raise SystemExit(
-        "refusing to seed: set FTP_ADMIN_PASSWORD when ENVIRONMENT=production. "
-        "The bootstrap password is published in this file, so using it on a "
-        "reachable deployment is a live exposure, not a placeholder."
-    )
-
 #: The organisation hierarchy lives in editable CSVs rather than in code, so the
 #: bank can drop in its real divisions, districts and branches without a
 #: deployment. Comment lines start "#".
@@ -232,6 +225,18 @@ def seed() -> None:
         # --- bootstrap HO administrator ---------------------------------------- #
         admin = s.scalar(select(User).filter_by(username="admin"))
         if not admin:
+            # Checked here, not at import: this is the only moment the password
+            # is used. A deployment that has already bootstrapped re-runs this
+            # seed on every boot and must not need the variable still to be
+            # present -- withdrawing it once the account exists is the correct
+            # end state, not a misconfiguration.
+            if settings.is_production and ADMIN_PASSWORD == DEFAULT_ADMIN_PASSWORD:
+                raise SystemExit(
+                    "refusing to create the admin account: set "
+                    "FTP_ADMIN_PASSWORD when ENVIRONMENT=production. The "
+                    "fallback is published in this file, so using it on a "
+                    "reachable deployment is a live exposure."
+                )
             admin = User(
                 username="admin",
                 full_name="HO Administrator",
