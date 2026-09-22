@@ -64,7 +64,7 @@ def list_audit(
     entity_type: Annotated[list[str] | None, Query()] = None,
     entity_id: str | None = None,
     action: Annotated[list[str] | None, Query()] = None,
-    actor: str | None = None,
+    actor: str | None = None,          # matched as a case-insensitive substring
     date_from: date | None = None,
     date_to: date | None = None,
     limit: int = Query(default=50, ge=1, le=MAX_LIMIT),
@@ -79,7 +79,17 @@ def list_audit(
     if action:
         where.append(AuditLog.action.in_(action))
     if actor:
-        where.append(AuditLog.actor_username == actor)
+        # Partial and case-insensitive. The control is presented as a search
+        # box, so exact equality read as a broken filter: typing "adm" matched
+        # nothing, and the only input that worked was the full username in the
+        # right case. Wildcards in the term are escaped so they match as typed
+        # rather than turning a search for "50%" into a match on everything.
+        term = (actor.strip()
+                .replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_"))
+        if term:
+            where.append(AuditLog.actor_username.ilike(f"%{term}%", escape="\\"))
     if date_from:
         where.append(AuditLog.occurred_at >= datetime.combine(date_from, time.min))
     if date_to:

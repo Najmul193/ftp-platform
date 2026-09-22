@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, AuditEntry, AuditEntryDetail } from "../api";
 import { Button, Card, MiniButton, Pill, Table } from "../components/ui";
 import { useAsync } from "../state";
@@ -44,9 +44,24 @@ function summarise(entry: AuditEntry): string {
   return parts.join(" · ");
 }
 
+/** Settles on a value once typing pauses.
+ *
+ *  Without this the list refetched on every keystroke, so each half-typed name
+ *  produced an empty table -- the filter looked broken while it was in fact
+ *  answering the question asked of it. */
+function useDebounced<T>(value: T, ms = 300): T {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setSettled(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return settled;
+}
+
 export default function Activity() {
   const [entity, setEntity] = useState("");
-  const [actor, setActor] = useState("");
+  const [actorInput, setActorInput] = useState("");
+  const actor = useDebounced(actorInput.trim());
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [offset, setOffset] = useState(0);
@@ -60,6 +75,10 @@ export default function Activity() {
     limit: PAGE,
     offset,
   }), [entity, actor, from, to, offset]);
+
+  // A settled term is a new result set, so paging has to start over -- asking
+  // for page 3 of it would come back empty and look like no match.
+  useEffect(() => { setOffset(0); }, [actor, entity, from, to]);
 
   const total = log.data?.total ?? 0;
   const shown = log.data?.items.length ?? 0;
@@ -89,9 +108,9 @@ export default function Activity() {
                 <option key={x.value} value={x.value}>{x.label}</option>
               ))}
             </select>
-            <input style={{ ...field, width: 120 }} value={actor} placeholder="Who"
-                   aria-label="Actor username"
-                   onChange={(e) => { setActor(e.target.value); setOffset(0); }} />
+            <input style={{ ...field, width: 130 }} value={actorInput}
+                   placeholder="Who" aria-label="Search by who made the change"
+                   onChange={(e) => { setActorInput(e.target.value); setOffset(0); }} />
             <input style={field} type="date" value={from} aria-label="From date"
                    onChange={(e) => { setFrom(e.target.value); setOffset(0); }} />
             <input style={field} type="date" value={to} aria-label="To date"
