@@ -19,21 +19,54 @@ export default function Leaders() {
     () => api.leaderboard(filters, group, "branch", 3, metric), [filters, group, metric]);
   const lead = useAsync(() => api.productLeadership(filters, area), [filters, area]);
 
-  // Grouped bar: each area's products side by side, one hue per product in
+  // Grouped columns: each area's products side by side, one hue per product in
   // fixed slot order so a product keeps its colour across every area.
+  //
+  // Deliberately NOT stacked. Stacking puts every segment above the last on a
+  // different baseline, so the one comparison this chart exists for -- is CC
+  // bigger here than there -- cannot be made by eye. Grouped, every bar starts
+  // at zero and its height is directly readable.
+  // Fixed product order, and therefore fixed colours: a product keeps its hue
+  // in the chart, the legend and the table, whatever its rank in a given area.
+  const productOrder = useMemo(
+    () => Array.from(new Set((lead.data?.areas ?? [])
+      .flatMap((a) => a.breakdown.map((b) => b.product_code)))).slice(0, 8),
+    [lead.data],
+  );
+  const colourOf = useMemo(
+    () => (code: string) => {
+      const i = productOrder.indexOf(code);
+      return i >= 0 ? t.series[i] : t.muted;
+    },
+    [productOrder, t],
+  );
+
   const leadOption = useMemo(() => {
     const areas = lead.data?.areas ?? [];
     if (!areas.length) return null;
-    const products = Array.from(
-      new Set(areas.flatMap((a) => a.breakdown.map((b) => b.product_code))),
-    ).slice(0, 8);
+    const products = productOrder;
     return {
       ...baseOption(t),
       grid: { left: 8, right: 16, top: 34, bottom: 4, containLabel: true },
       legend: { ...baseOption(t).legend, top: 0, left: 0 },
       tooltip: {
         ...baseOption(t).tooltip, trigger: "axis", axisPointer: { type: "shadow" },
-        valueFormatter: (v: number) => money(v),
+        formatter: (ps: unknown) => {
+          const arr = (ps as { axisValue: string; seriesName: string;
+                               value: number; color: string }[])
+            .slice().sort((a, b) => b.value - a.value);
+          const area = areas.find((x) => x.area_label === arr[0]?.axisValue);
+          const total = arr.reduce((s2, x) => s2 + x.value, 0);
+          return `<b>${arr[0]?.axisValue}</b>` +
+            (area ? `<br/><span style="color:${t.muted}">leader ${area.winner.product_code}` +
+                    ` · ${area.dominance_pct}% of the area</span>` : "") +
+            "<br/>" +
+            arr.map((x) =>
+              `<span style="display:inline-block;width:8px;height:8px;border-radius:2px;` +
+              `background:${x.color};margin-right:6px"></span>${x.seriesName}: ` +
+              `<b>${money(x.value)}</b>`).join("<br/>") +
+            `<br/><span style="color:${t.muted}">total ${money(total)}</span>`;
+        },
       },
       xAxis: { type: "category", data: areas.map((a) => a.area_label), ...axisCommon(t),
                splitLine: { show: false },
@@ -42,16 +75,18 @@ export default function Leaders() {
       yAxis: { type: "value", ...axisCommon(t), axisLine: { show: false },
                axisLabel: { color: t.muted, fontSize: 11,
                             formatter: (v: number) => compact(v) } },
-      series: products.map((code, i) => ({
-        name: code, type: "bar", stack: "p",
-        // 2px surface gap between stacked segments instead of a border.
-        itemStyle: { color: t.series[i], borderColor: t.surface, borderWidth: 2 },
+      series: products.map((code) => ({
+        name: code, type: "bar",
+        barMaxWidth: 26,
+        barGap: "12%",        // a gap inside the group, not between groups
+        barCategoryGap: "32%",
+        itemStyle: { color: colourOf(code), borderRadius: [3, 3, 0, 0] },
         emphasis: { focus: "series" },
         data: areas.map((a) =>
           n(a.breakdown.find((b) => b.product_code === code)?.net_ftp_profit ?? 0)),
       })),
     } as never;
-  }, [lead.data, t]);
+  }, [lead.data, t, productOrder, colourOf]);
 
   const h = head.data;
 
@@ -179,7 +214,7 @@ export default function Leaders() {
               </div>
               {leadOption && (
                 <Chart option={leadOption} height={250} loading={lead.loading}
-                       ariaLabel={`Product profit stacked by ${area}`} />
+                       ariaLabel={`Net FTP profit by product, grouped by ${area}`} />
               )}
               <div style={{ marginTop: 10 }}>
                 <Table csvName={`ftp-product-leadership-${area}.csv`}
@@ -191,7 +226,8 @@ export default function Leaders() {
                            render: (r) => (
                              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                                <span aria-hidden style={{ width: 8, height: 8, borderRadius: 2,
-                                 background: "var(--series-1)", display: "inline-block" }} />
+                                 background: colourOf(r.winner.product_code),
+                                 display: "inline-block" }} />
                                {r.winner.product_name}
                              </span>
                            ),

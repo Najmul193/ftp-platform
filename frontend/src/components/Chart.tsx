@@ -99,6 +99,11 @@ export default function Chart({ option, height = 280, onSelect, loading, ariaLab
   useEffect(() => {
     if (!ref.current) return;
     inst.current = echarts.init(ref.current, undefined, { renderer: "canvas" });
+    // Testability hook: a canvas cannot be inspected from the outside, so the
+    // instance is attached to its element. This is how the axis audit checks
+    // that every bar chart's value axis actually includes zero, rather than
+    // taking the source at its word.
+    (ref.current as unknown as { __chart?: unknown }).__chart = inst.current;
     const ro = new ResizeObserver(() => inst.current?.resize());
     ro.observe(ref.current);
     return () => { ro.disconnect(); inst.current?.dispose(); };
