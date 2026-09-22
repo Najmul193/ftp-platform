@@ -251,6 +251,10 @@ class AggDailyBranchProduct(Base, _AggMixin):
     branch_category: Mapped[BranchCategory] = mapped_column(
         pg_enum(BranchCategory, "branch_category")
     )
+    #: A branch x product row is single-sided by construction, since a product
+    #: is either an asset or a liability. Carrying it lets a side filter apply
+    #: at this grain; without it the filter was silently dropped.
+    side: Mapped[Side] = mapped_column(pg_enum(Side, "product_side"))
     product_short_name: Mapped[str | None] = mapped_column(String(60))
 
 

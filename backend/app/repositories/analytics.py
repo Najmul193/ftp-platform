@@ -40,7 +40,8 @@ from app.models import (
     FtpCalculationResult,
 )
 from app.repositories.dashboard import (
-    RATE_Q, ZERO, DashboardRepo, Filters, _apply_filters, _apply_scope, _grain,
+    RATE_Q, ZERO, DashboardRepo, Filters, _apply_filters, _apply_scope,
+    _fact_sums, _grain, _sums,
 )
 
 DAY_BASIS = Decimal(36500)
@@ -85,6 +86,35 @@ class AnalyticsRepo:
     # ------------------------------------------------------------------ #
     # Period helpers
     # ------------------------------------------------------------------ #
+
+    def _totals(self, f: Filters):
+        """Measures for the whole slice, from whichever grain can answer it.
+
+        `ftp_sign` and `account_no` are predicates on individual accounts, so
+        no aggregate can express them. Routing those to the fact table here is
+        what stops the analytics answering for the whole book while the page
+        displays a chip saying otherwise.
+        """
+        if f.needs_fact_grain:
+            return self.s.execute(
+                select(*_fact_sums()).where(self.dash._fact_where(f))
+            ).one()
+        model = _grain(f)
+        return self.s.execute(
+            _apply_filters(
+                _apply_scope(select(*_sums(model)), model, self.dash._scope_for(f)),
+                model, f,
+            )
+        ).one()
+
+    def _fact_dimension(self, by: Dimension):
+        """The fact-table column that stands for each rollup dimension."""
+        F = FtpCalculationResult
+        return {
+            "branch": F.branch_code, "product": F.product_code,
+            "category": F.branch_category, "division": F.division_id,
+            "district": F.district_id,
+        }[by]
 
     def resolve_period(self, f: Filters) -> Period | None:
         """The window actually covered, filling in open-ended filters."""
@@ -332,7 +362,25 @@ class AnalyticsRepo:
 
     def _segments(self, f: Filters, by: Dimension) -> list[dict]:
         """Segment totals including the weighted-rate component."""
-        from app.repositories.dashboard import _MEASURES, _sums
+        from app.repositories.dashboard import _MEASURES
+
+        if f.needs_fact_grain:
+            col = self._fact_dimension(by)
+            names = self._label_maps()
+            stmt = (select(col, *_fact_sums())
+                    .where(self.dash._fact_where(f)).group_by(col))
+            out = []
+            for r in self.s.execute(stmt):
+                raw = r[0]
+                key = raw.value if hasattr(raw, "value") else raw
+                label = (str(key).replace("_", " ").title() if by == "category"
+                         else names.get(by, {}).get(key, str(key)))
+                row = {m: _d(getattr(r, m)) for m in _MEASURES}
+                row["label"] = label
+                row["account_count"] = r.account_count or 0
+                row["negative_ftp_count"] = r.negative_ftp_count or 0
+                out.append(row)
+            return out
 
         model, keys, label_of = self._dimension(by, f)
         stmt = _apply_filters(
@@ -378,14 +426,7 @@ class AnalyticsRepo:
         for its side. Rates are shown in basis points of the book so a small
         book and a large one can be compared directly.
         """
-        from app.repositories.dashboard import _sums
-
-        model = _grain(f)
-        stmt = _apply_filters(
-            _apply_scope(select(*_sums(model)), model, self.dash._scope_for(f)),
-            model, f,
-        )
-        r = self.s.execute(stmt).one()
+        r = self._totals(f)
         balance = _d(r.total_balance)
 
         def band(x: Decimal) -> Decimal:
@@ -894,21 +935,12 @@ class AnalyticsRepo:
     # ------------------------------------------------------------------ #
 
     def _fact_where(self, f: Filters):
-        """Scope-and-filter predicate for the fact table."""
-        F = FtpCalculationResult
-        conds = [F.is_current.is_(True)]
-        if f.date_from:
-            conds.append(F.business_date >= f.date_from)
-        if f.date_to:
-            conds.append(F.business_date <= f.date_to)
-        if f.product_codes:
-            conds.append(F.product_code.in_(f.product_codes))
-        if f.side:
-            conds.append(F.side == f.side)
-        scope = self.dash._scope_for(f)
-        if not scope.unrestricted:
-            conds.append(F.branch_id.in_(scope.branch_ids or [-1]))
-        return and_(*conds)
+        """Scope-and-filter predicate for the fact table.
+
+        Delegates, so there is one definition of what a filter means rather
+        than two that can drift.
+        """
+        return self.dash._fact_where(f)
 
     # ------------------------------------------------------------------ #
     # 13. Leaderboards -- top performers, and who leads where
@@ -1217,14 +1249,7 @@ class AnalyticsRepo:
         assets exceed deposits the treasury has bought the difference, and that
         cost is properly theirs rather than the branches'.
         """
-        from app.repositories.dashboard import _sums
-
-        model = _grain(f)
-        stmt = _apply_filters(
-            _apply_scope(select(*_sums(model)), model, self.dash._scope_for(f)), model, f,
-        )
-        r = self.s.execute(stmt).one()
-
+        r = self._totals(f)
         interest_received = _d(r.interest_receivable)
         interest_paid = _d(r.interest_payable)
         nii = interest_received - interest_paid
@@ -1264,14 +1289,8 @@ class AnalyticsRepo:
         of how many days the window covers.
         """
         from app.models import Product
-        from app.repositories.dashboard import _sums
 
-        model = _grain(f)
-        stmt = _apply_filters(
-            _apply_scope(select(*_sums(model)), model, self.dash._scope_for(f)), model, f,
-        )
-        r = self.s.execute(stmt).one()
-
+        r = self._totals(f)
         assets = _d(r.asset_balance)
         liabs = _d(r.liability_balance)
         received = _d(r.interest_receivable)
@@ -1286,17 +1305,26 @@ class AnalyticsRepo:
         nim = annualised(nii, assets)
 
         # CASA needs the demand/time split, which lives on the product master.
-        m = AggDailyBranchProduct
-        casa_rows = self.s.execute(
-            _apply_filters(
-                _apply_scope(
-                    select(Product.liability_nature, func.sum(m.liability_balance))
-                    .join(Product, Product.id == m.product_id)
-                    .where(Product.side == Side.LIABILITY),
-                    m, self.dash._scope_for(f),
-                ), m, f,
-            ).group_by(Product.liability_nature)
-        ).all()
+        if f.needs_fact_grain:
+            F = FtpCalculationResult
+            casa_rows = self.s.execute(
+                select(F.liability_nature, func.sum(F.balance))
+                .where(self.dash._fact_where(f))
+                .where(F.side == Side.LIABILITY)
+                .group_by(F.liability_nature)
+            ).all()
+        else:
+            m = AggDailyBranchProduct
+            casa_rows = self.s.execute(
+                _apply_filters(
+                    _apply_scope(
+                        select(Product.liability_nature, func.sum(m.liability_balance))
+                        .join(Product, Product.id == m.product_id)
+                        .where(Product.side == Side.LIABILITY),
+                        m, self.dash._scope_for(f),
+                    ), m, f,
+                ).group_by(Product.liability_nature)
+            ).all()
         demand = sum((_d(v) for k, v in casa_rows if k and k.value == "DEMAND"), ZERO)
         time_ = sum((_d(v) for k, v in casa_rows if k and k.value == "TIME"), ZERO)
         deposits = demand + time_

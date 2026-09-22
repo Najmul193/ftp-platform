@@ -13,10 +13,13 @@ import Leaders from "./views/Leaders";
 import Overview from "./views/Overview";
 import Upload from "./views/Upload";
 
+//: Daily is first and is where a session lands: it answers "is anything wrong
+//: this morning?" before offering anywhere to explore. `currentView` defaults
+//: to the same id, so the landing page and the first nav item cannot drift.
 const NAV = [
+  { id: "daily", label: "Daily", group: "Analyse" },
   { id: "basic", label: "Basic overview", group: "Analyse" },
   { id: "consolidated", label: "Consolidated", group: "Analyse" },
-  { id: "daily", label: "Daily", group: "Analyse" },
   { id: "overview", label: "Overview", group: "Analyse" },
   { id: "analytics", label: "Analytics", group: "Analyse" },
   { id: "leaders", label: "Leaders", group: "Analyse" },

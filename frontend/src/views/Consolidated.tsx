@@ -8,27 +8,54 @@ const PAGE = 50;
 
 /** A page shaped like the "Consolidated Data" sheet of the workbook: every
  *  account-day as one row, all fifteen columns, nothing computed on the fly.
- *  Defaults to the latest upload date: that is the snapshot that says which
- *  account stands in which state today. */
+ *
+ *  A snapshot is one business date. It opens on the most recent one, because
+ *  that is the state the book stands in today, but any loaded date can be
+ *  selected -- reading a single day is the normal way to use this sheet, and
+ *  across several days each account appears once per day, which is a different
+ *  question. "Full window" answers that one instead. */
 export default function Consolidated() {
   const { filters, can, dataInfo } = useApp();
-  const [scope, setScope] = useState<"latest" | "all">("latest");
+  //: null means "every date in the filter window"; otherwise a single date.
+  const [snapshot, setSnapshot] = useState<string | null>(null);
+  const [touched, setTouched] = useState(false);
   const [offset, setOffset] = useState(0);
   const [order, setOrder] = useState("business_date");
   const [desc, setDesc] = useState(false);
 
   const latest = dataInfo?.latest_business_date;
-  const f = useMemo(
-    () => scope === "latest" && latest
-      ? { ...filters, date_from: latest, date_to: latest }
-      : filters,
-    [filters, scope, latest],
+
+  // Which dates actually hold data under the current filters.
+  const trend = useAsync(() => api.trend(filters), [filters]);
+  const availableDates = useMemo(
+    () => (trend.data?.points ?? []).map((p) => String(p.key)).sort(),
+    [trend.data],
   );
+
+  // Default to the newest available date, but never override a choice the
+  // user has made -- otherwise changing a filter would silently reset it.
+  const effective = useMemo(() => {
+    if (touched) return snapshot;
+    return availableDates.length ? availableDates[availableDates.length - 1] : null;
+  }, [touched, snapshot, availableDates]);
+
+  const f = useMemo(
+    () => (effective
+      ? { ...filters, date_from: effective, date_to: effective }
+      : filters),
+    [filters, effective],
+  );
+
+  const pick = (d: string | null) => { setSnapshot(d); setTouched(true); setOffset(0); };
 
   const page = useAsync(
     () => api.accounts(f, { limit: PAGE, offset, order, desc }),
     [f, offset, order, desc],
   );
+  // Totals for the whole snapshot, not for the fifty rows on screen. Summing
+  // the visible page gave a "Net FTP profit" that changed every time you
+  // paged, which is not a figure anyone can use.
+  const totals = useAsync(() => api.kpis(f), [f]);
 
   if (!can("ACCOUNT_DRILLDOWN")) {
     return <Empty title="Not permitted"
@@ -48,32 +75,64 @@ export default function Consolidated() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <Grid cols="repeat(auto-fit, minmax(200px, 1fr))">
-        <Stat label="Snapshot" value={scope === "latest" && latest ? longDate(latest) : `${filters.date_from ?? "…"} – ${filters.date_to ?? "…"}`}
-              hint={scope === "latest" ? "last upload date" : "whole filter window"} />
+        <Stat label="Snapshot"
+              value={effective ? longDate(effective)
+                     : `${availableDates.length} ${availableDates.length === 1 ? "date" : "dates"}`}
+              hint={effective
+                ? (effective === latest ? "latest loaded date" : "selected date")
+                : "whole filter window"} />
         <Stat label="Account-days" value={total.toLocaleString()} />
-        <Stat label="Asset FTP profit" value={money(
-          rows.reduce((a, r) => a + Number(r.asset_ftp_profit), 0))} hint="on this page" />
-        <Stat label="Liability FTP profit" value={money(
-          rows.reduce((a, r) => a + Number(r.liability_ftp_profit), 0))} hint="on this page" />
-        <Stat label="Net FTP profit" value={money(
-          rows.reduce((a, r) => a + Number(r.ftp_income), 0))} hint="on this page" />
+        <Stat label="Asset FTP profit" value={money(totals.data?.asset_ftp_profit)}
+              hint="whole snapshot" />
+        <Stat label="Liability FTP profit" value={money(totals.data?.liability_ftp_profit)}
+              hint="whole snapshot" />
+        <Stat label="Net FTP profit" value={money(totals.data?.net_ftp_profit)}
+              hint="whole snapshot" />
       </Grid>
 
       <Card title="Consolidated data"
-            subtitle={scope === "latest" && latest
-              ? `${total.toLocaleString()} account-days · every account as of ${longDate(latest)} · the latest upload`
-              : `${total.toLocaleString()} account-days · all dates in the filter window · same layout as the workbook sheet`}
+            subtitle={effective
+              ? `${total.toLocaleString()} account-days · every account as of ${longDate(effective)}`
+              : `${total.toLocaleString()} account-days · all ${availableDates.length} dates in the filter window · same layout as the workbook sheet`}
             actions={
-              <div style={{ display: "flex", gap: 6 }}>
-                <MiniButton active={scope === "latest"} onClick={() => { setScope("latest"); setOffset(0); }}>
-                  Latest date
-                </MiniButton>
-                <MiniButton active={scope === "all"} onClick={() => { setScope("all"); setOffset(0); }}>
-                  Full window
-                </MiniButton>
+              <div style={{ display: "flex", gap: 6, alignItems: "center",
+                            flexWrap: "wrap" }}>
+                {/* Step through the loaded dates without opening the list --
+                    reading consecutive days is the common way to use this. */}
+                <MiniButton
+                  onClick={() => {
+                    const i = effective ? availableDates.indexOf(effective) : 0;
+                    if (i > 0) pick(availableDates[i - 1]);
+                  }}
+                  title="Previous business date">‹</MiniButton>
+
+                <select
+                  value={effective ?? ""}
+                  onChange={(e) => pick(e.target.value || null)}
+                  style={{ background: "var(--surface-1)", borderRadius: 6,
+                           border: "1px solid var(--border-strong)",
+                           padding: "3px 8px", fontSize: 11.5 }}>
+                  <option value="">Full window ({availableDates.length} dates)</option>
+                  {availableDates.slice().reverse().map((d) => (
+                    <option key={d} value={d}>
+                      {longDate(d)}{d === latest ? " (latest)" : ""}
+                    </option>
+                  ))}
+                </select>
+
+                <MiniButton
+                  onClick={() => {
+                    const i = effective ? availableDates.indexOf(effective) : -1;
+                    if (i >= 0 && i < availableDates.length - 1) pick(availableDates[i + 1]);
+                  }}
+                  title="Next business date">›</MiniButton>
+
+                {effective !== latest && latest && (
+                  <MiniButton onClick={() => pick(latest)}>Latest</MiniButton>
+                )}
               </div>
             }
-            footnote="The latest date is the last upload's snapshot: each account appears once, in the state it stands today. Switch to the full window to read every account-day in the filter, like the workbook sheet.">
+            footnote="A snapshot is one business date: each account appears once, in the state it stood on that day. Step through the dates with the arrows, or switch to the full window to read every account-day in the filter, like the workbook sheet.">
         <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
           {[["business_date", "Date"], ["balance", "Balance"], ["normalized_roi", "ROI"],
             ["ftp_rate", "FTP rate"], ["ftp_income", "FTP profit"]].map(([k, lbl]) => (

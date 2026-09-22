@@ -68,8 +68,15 @@ function writeFilters(view: string, f: Filters) {
   if (location.hash !== next) history.replaceState(null, "", next);
 }
 
+/** The view the hash names, defaulting to the landing page.
+ *
+ *  Must stay in step with the first entry of NAV and with App's component
+ *  lookup: they disagreed before, so an empty hash rendered Overview while
+ *  Daily was the intended landing page. */
+export const DEFAULT_VIEW = "daily";
+
 export function currentView(): string {
-  return location.hash.replace(/^#\/?/, "").split("?")[0] || "overview";
+  return location.hash.replace(/^#\/?/, "").split("?")[0] || DEFAULT_VIEW;
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {

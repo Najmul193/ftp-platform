@@ -15,7 +15,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any, Sequence
 
-from sqlalchemy import Select, and_, func, select
+from sqlalchemy import Select, and_, case, func, select
 from sqlalchemy.orm import Session
 
 from app.domain.scope import ScopeFilter, intersect_requested
@@ -26,6 +26,23 @@ from app.models import (
 )
 
 ZERO = Decimal(0)
+
+
+def _d_or_zero(v: Any) -> Decimal:
+    return Decimal(v) if v is not None else ZERO
+
+
+def _plain_key(v: Any) -> Any:
+    """A group key the response model can carry.
+
+    Grouping on a date or an enum yields a Python object; SeriesPoint.key is a
+    string or an int. The aggregate paths stringified these at each call site
+    and the fact paths did not, which surfaced as a response-validation error
+    rather than as anything a reader could act on.
+    """
+    if isinstance(v, date):
+        return v.isoformat()
+    return v.value if hasattr(v, "value") else v
 #: Presentation scale for derived ratios. Division yields the full Decimal
 #: context precision, which is meaningless noise on a percentage.
 RATE_Q = Decimal("0.0001")
@@ -49,6 +66,18 @@ class Filters:
     @property
     def needs_product_grain(self) -> bool:
         return bool(self.product_codes) or self.side is not None
+
+    @property
+    def needs_fact_grain(self) -> bool:
+        """True when only the fact table can answer.
+
+        `ftp_sign` and `account_no` are predicates on individual accounts.
+        No aggregate carries an account, so these cannot be expressed at any
+        pre-aggregated grain -- and a filter that cannot be applied must not be
+        quietly dropped, or the page shows a chip saying NEGATIVE FTP above
+        totals covering the whole book.
+        """
+        return bool(self.account_no) or self.ftp_sign in ("POSITIVE", "NEGATIVE")
 
 
 def _apply_scope(stmt: Select, model: Any, scope: ScopeFilter) -> Select:
@@ -108,6 +137,36 @@ def _grain(f: Filters):
     return AggDailyBranchProduct if f.needs_product_grain else AggDailyBranch
 
 
+#: The same measures as `_MEASURES`, expressed against the fact table. Used
+#: only when a filter cannot be answered from an aggregate; the aggregate path
+#: stays the default because it is what keeps dashboard cost flat.
+def _fact_sums() -> list:
+    F = FtpCalculationResult
+    asset, liab = Side.ASSET, Side.LIABILITY
+    signed_bm = case((F.side == liab, F.benchmark_rate * F.balance),
+                     else_=-F.benchmark_rate * F.balance)
+    signed_roi = case((F.side == liab, -F.normalized_roi * F.balance),
+                      else_=F.normalized_roi * F.balance)
+    return [
+        func.coalesce(func.sum(F.balance).filter(F.side == asset), 0).label("asset_balance"),
+        func.coalesce(func.sum(F.balance).filter(F.side == liab), 0).label("liability_balance"),
+        func.coalesce(func.sum(F.customer_interest).filter(F.side == asset), 0).label("interest_receivable"),
+        func.coalesce(func.sum(F.customer_interest).filter(F.side == liab), 0).label("interest_payable"),
+        func.coalesce(func.sum(F.asset_ftp_profit), 0).label("asset_ftp_profit"),
+        func.coalesce(func.sum(F.liability_ftp_profit), 0).label("liability_ftp_profit"),
+        func.coalesce(func.sum(F.ftp_income), 0).label("net_ftp_profit"),
+        func.coalesce(func.sum(F.normalized_roi * F.balance), 0).label("roi_x_balance"),
+        func.coalesce(func.sum(F.ftp_rate * F.balance), 0).label("ftp_rate_x_balance"),
+        func.coalesce(func.sum(signed_bm), 0).label("benchmark_contrib"),
+        func.coalesce(func.sum(signed_roi), 0).label("roi_contrib"),
+        func.coalesce(func.sum(-F.liquidity_cost * F.balance), 0).label("liquidity_contrib"),
+        func.coalesce(func.sum(-F.other_cost * F.balance), 0).label("other_contrib"),
+        func.coalesce(func.sum(F.balance), 0).label("total_balance"),
+        func.count().label("account_count"),
+        func.coalesce(func.count().filter(F.negative_ftp_flag.is_(True)), 0).label("negative_ftp_count"),
+    ]
+
+
 class DashboardRepo:
     def __init__(self, session: Session, scope: ScopeFilter) -> None:
         self.s = session
@@ -150,6 +209,8 @@ class DashboardRepo:
     # ------------------------------------------------------------------ #
 
     def kpis(self, f: Filters) -> dict[str, Any]:
+        if f.needs_fact_grain:
+            return self._fact_kpis(f)
         model = _grain(f)
         stmt = _apply_filters(_apply_scope(select(*_sums(model)), model, self._scope_for(f)), model, f)
         row = self.s.execute(stmt).one()
@@ -216,6 +277,83 @@ class DashboardRepo:
         return {"division": divisions, "district": districts,
                 "district_parent": parent, "branch": branch_parent}
 
+    def _fact_where(self, f: Filters):
+        """Scope-and-filter predicate for the fact table."""
+        F = FtpCalculationResult
+        conds = [F.is_current.is_(True)]
+        if f.date_from:
+            conds.append(F.business_date >= f.date_from)
+        if f.date_to:
+            conds.append(F.business_date <= f.date_to)
+        if f.product_codes:
+            conds.append(F.product_code.in_(f.product_codes))
+        if f.side is not None:
+            conds.append(F.side == f.side)
+        if f.account_no:
+            conds.append(F.account_no.like(f"%{f.account_no}%"))
+        if f.ftp_sign == "NEGATIVE":
+            conds.append(F.negative_ftp_flag.is_(True))
+        elif f.ftp_sign == "POSITIVE":
+            conds.append(F.negative_ftp_flag.is_(False))
+        scope = self._scope_for(f)
+        if not scope.unrestricted:
+            conds.append(F.branch_id.in_(scope.branch_ids or [-1]))
+        return and_(*conds)
+
+    def _row_to_measures(self, r) -> dict[str, Any]:
+        bal = _d_or_zero(r.total_balance)
+        return {
+            **{m: _d_or_zero(getattr(r, m)) for m in _MEASURES},
+            "account_count": r.account_count or 0,
+            "negative_ftp_count": r.negative_ftp_count or 0,
+            "avg_ftp_rate": ((_d_or_zero(r.ftp_rate_x_balance) / bal).quantize(RATE_Q)
+                             if bal else ZERO),
+        }
+
+    def _fact_kpis(self, f: Filters) -> dict[str, Any]:
+        F = FtpCalculationResult
+        where = self._fact_where(f)
+        r = self.s.execute(select(*_fact_sums()).where(where)).one()
+        data = self._row_to_measures(r)
+        data.pop("avg_ftp_rate", None)
+
+        branches, days = self.s.execute(
+            select(func.count(func.distinct(F.branch_id)),
+                   func.count(func.distinct(F.business_date))).where(where)
+        ).one()
+        products = self.s.scalar(
+            select(func.count(func.distinct(F.product_id))).where(where)) or 0
+
+        total_balance = data["total_balance"] or ZERO
+        net = data["net_ftp_profit"] or ZERO
+        return {
+            **data,
+            "branch_count": branches or 0,
+            "product_count": products,
+            "day_count": days or 0,
+            "ftp_over_balance_pct": (
+                (net / total_balance * Decimal(365) * Decimal(100)).quantize(RATE_Q)
+                if total_balance else ZERO
+            ),
+        }
+
+    def _fact_breakdown(self, f: Filters, keys: Sequence, labels,
+                        parents=None, order_by=None) -> list[dict]:
+        where = self._fact_where(f)
+        stmt = (select(*keys, *_fact_sums()).where(where)
+                .group_by(*keys)
+                .order_by(order_by if order_by is not None
+                          else func.sum(FtpCalculationResult.ftp_income).desc()))
+        out = []
+        for r in self.s.execute(stmt):
+            out.append({
+                "key": _plain_key(r[0]),
+                "label": labels(r),
+                "parent_label": parents(r) if parents else None,
+                **self._row_to_measures(r),
+            })
+        return out
+
     def _breakdown(self, f: Filters, model: Any, keys: Sequence, labels,
                    parents=None) -> list[dict]:
         stmt = _apply_filters(
@@ -248,38 +386,50 @@ class DashboardRepo:
         return out
 
     def by_branch(self, f: Filters) -> list[dict]:
-        m = _grain(f)
         names = self._names()["branch"]
-        return self._breakdown(
-            f, m, [m.branch_id, m.branch_code],
-            lambda r: f"{r[1]} {names.get(r[1], ('', ''))[1]}".strip(),
-            lambda r: names.get(r[1], ("", ""))[0] or None,
-        )
+        label = lambda r: f"{r[1]} {names.get(r[1], ('', ''))[1]}".strip()  # noqa: E731
+        parent = lambda r: names.get(r[1], ("", ""))[0] or None            # noqa: E731
+        if f.needs_fact_grain:
+            F = FtpCalculationResult
+            return self._fact_breakdown(f, [F.branch_id, F.branch_code], label, parent)
+        m = _grain(f)
+        return self._breakdown(f, m, [m.branch_id, m.branch_code], label, parent)
 
     def by_division(self, f: Filters) -> list[dict]:
         """The coarsest rollup -- around eight rows, so it charts directly."""
-        m = _grain(f)
         names = self._names()["division"]
-        return self._breakdown(
-            f, m, [m.division_id],
-            lambda r: names.get(r[0], f"Division {r[0]}"),
-        )
+        label = lambda r: names.get(r[0], f"Division {r[0]}")  # noqa: E731
+        if f.needs_fact_grain:
+            return self._fact_breakdown(
+                f, [FtpCalculationResult.division_id], label)
+        m = _grain(f)
+        return self._breakdown(f, m, [m.division_id], label)
 
     def by_district(self, f: Filters) -> list[dict]:
         """Around sixty rows: readable as a ranked table, not as a bar chart."""
-        m = _grain(f)
         n = self._names()
-        return self._breakdown(
-            f, m, [m.district_id],
-            lambda r: n["district"].get(r[0], f"District {r[0]}"),
-            lambda r: n["district_parent"].get(r[0]) or None,
-        )
+        label = lambda r: n["district"].get(r[0], f"District {r[0]}")   # noqa: E731
+        parent = lambda r: n["district_parent"].get(r[0]) or None       # noqa: E731
+        if f.needs_fact_grain:
+            return self._fact_breakdown(
+                f, [FtpCalculationResult.district_id], label, parent)
+        m = _grain(f)
+        return self._breakdown(f, m, [m.district_id], label, parent)
 
     def by_product(self, f: Filters) -> list[dict]:
+        if f.needs_fact_grain:
+            F = FtpCalculationResult
+            return self._fact_breakdown(f, [F.product_id, F.product_code], lambda r: r[1])
         m = AggDailyBranchProduct
         return self._breakdown(f, m, [m.product_id, m.product_code], lambda r: r[1])
 
     def by_category(self, f: Filters) -> list[dict]:
+        if f.needs_fact_grain:
+            return self._fact_breakdown(
+                f, [FtpCalculationResult.branch_category],
+                lambda r: (r[0].value if hasattr(r[0], "value") else str(r[0]))
+                          .replace("_", " ").title(),
+            )
         scope = self._scope_for(f)
         # AggDailyCategory has no branch_id and therefore cannot carry a scope
         # predicate. It is only safe when nothing needs scoping at all.
@@ -288,7 +438,12 @@ class DashboardRepo:
             and not f.needs_product_grain
             and not (f.branch_ids or f.division_id or f.district_id or f.branch_category)
         )
-        m = AggDailyCategory if unscoped_ok else AggDailyBranch
+        # A product or side filter needs the grain that carries product, side
+        # AND category together -- neither of the coarser aggregates has all
+        # three, so both used to drop the filter and answer for the whole book.
+        m = (AggDailyCategory if unscoped_ok
+             else AggDailyBranchProduct if f.needs_product_grain
+             else AggDailyBranch)
         key = m.branch_category
         stmt = _apply_filters(select(key, *_sums(m)), m, f)
         if m is not AggDailyCategory:
@@ -316,6 +471,12 @@ class DashboardRepo:
         return out
 
     def trend(self, f: Filters) -> list[dict]:
+        if f.needs_fact_grain:
+            F = FtpCalculationResult
+            return self._fact_breakdown(
+                f, [F.business_date], lambda r: r[0].isoformat(),
+                order_by=F.business_date,
+            )
         m = _grain(f)
         stmt = _apply_filters(
             _apply_scope(select(m.business_date, *_sums(m)), m, self._scope_for(f)), m, f
@@ -341,6 +502,18 @@ class DashboardRepo:
         return out
 
     def heatmap(self, f: Filters) -> list[dict]:
+        if f.needs_fact_grain:
+            F = FtpCalculationResult
+            rows = self.s.execute(
+                select(F.branch_code, F.product_code,
+                       func.coalesce(func.sum(F.ftp_income), 0),
+                       func.coalesce(func.sum(F.balance), 0))
+                .where(self._fact_where(f))
+                .group_by(F.branch_code, F.product_code)
+            ).all()
+            return [{"branch_code": r[0], "product_code": r[1],
+                     "net_ftp_profit": _d_or_zero(r[2]),
+                     "total_balance": _d_or_zero(r[3])} for r in rows]
         m = AggDailyBranchProduct
         stmt = _apply_filters(
             _apply_scope(
