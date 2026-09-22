@@ -522,12 +522,14 @@ export default function Upload() {
                    value: (r) => r.uploaded_at },
                  ...(can("UPLOAD_DELETE") ? [{
                    key: "act", label: "", align: "right" as const,
-                   render: (r: Batch) => (
-                     <MiniButton onClick={() => askDelete(r.batch_ref)}
-                                 title="Delete this batch and recalculate">
-                       Delete
-                     </MiniButton>
-                   ),
+render: (r: Batch) => (
+                      <MiniButton onClick={() => askDelete(r.batch_ref)}
+                                  title="Delete this batch and recalculate"
+                                  style={{ color: "var(--status-critical)",
+                                           borderColor: "var(--status-critical)" }}>
+                        Delete
+                      </MiniButton>
+                    ),
                  }] : []),
                ]} />
       </Card>

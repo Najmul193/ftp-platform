@@ -72,8 +72,8 @@ function writeFilters(view: string, f: Filters) {
  *
  *  Must stay in step with the first entry of NAV and with App's component
  *  lookup: they disagreed before, so an empty hash rendered Overview while
- *  Daily was the intended landing page. */
-export const DEFAULT_VIEW = "daily";
+ *  Daily was the intended landing page. Sign-in lands here too (see login). */
+export const DEFAULT_VIEW = "basic";
 
 export function currentView(): string {
   return location.hash.replace(/^#\/?/, "").split("?")[0] || DEFAULT_VIEW;
@@ -179,8 +179,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const m = await api.me();
       setMe(m);
       await refreshMasters();
+      location.hash = `#/${DEFAULT_VIEW}`;
     },
-    logout: () => { setToken(null); setMe(null); location.hash = "#/overview"; },
+    logout: () => { setToken(null); setMe(null); location.hash = `#/${DEFAULT_VIEW}`; },
     can: (perm) => Boolean(me?.permissions.includes(perm)),
     refreshMe: async () => setMe(await api.me()),
     filters, setFilters,

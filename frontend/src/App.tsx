@@ -13,12 +13,12 @@ import Leaders from "./views/Leaders";
 import Overview from "./views/Overview";
 import Upload from "./views/Upload";
 
-//: Daily is first and is where a session lands: it answers "is anything wrong
-//: this morning?" before offering anywhere to explore. `currentView` defaults
-//: to the same id, so the landing page and the first nav item cannot drift.
+//: Basic overview is first and is where a session lands after sign-in.
+//: `currentView` defaults to the same id, so the landing page and the first
+//: nav item cannot drift.
 const NAV = [
-  { id: "daily", label: "Daily", group: "Analyse" },
   { id: "basic", label: "Basic overview", group: "Analyse" },
+  { id: "daily", label: "Daily", group: "Analyse" },
   { id: "overview", label: "Overview", group: "Analyse" },
   { id: "analytics", label: "Analytics", group: "Analyse" },
   { id: "leaders", label: "Leaders", group: "Analyse" },
@@ -82,19 +82,14 @@ function Shell() {
           flexDirection: "column", position: "sticky", top: 0, height: "100vh",
           paddingTop: "env(safe-area-inset-top, 0px)",
         }}>
-          <div style={{ padding: "16px 16px 12px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-              <span aria-hidden style={{
-                width: 28, height: 28, borderRadius: 7, background: "var(--series-1)",
-                color: "#fff", display: "grid", placeItems: "center",
-                fontSize: 11, fontWeight: 700, letterSpacing: ".02em",
-              }}>FTP</span>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 650 }}>Profitability</div>
-                <div style={{ fontSize: 10.5, color: "var(--text-muted)" }}>
-                  Funds Transfer Pricing
-                </div>
-              </div>
+          <div style={{ padding: "14px 16px 12px" }}>
+            <img src="/dataedge_logo.png" alt="Data Edge Ltd" style={{
+              width: "100%", maxHeight: 40, objectFit: "contain", objectPosition: "left",
+              display: "block",
+            }} />
+            <div style={{ fontSize: 10.5, color: "var(--text-muted)", marginTop: 6,
+                          fontWeight: 600, letterSpacing: ".04em" }}>
+              Funds Transfer Pricing · FTP Profitability
             </div>
           </div>
 
@@ -154,15 +149,9 @@ function Shell() {
 
             {!navOpen && (
               <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                <span aria-hidden style={{
-                  width: 22, height: 22, borderRadius: 6, background: "var(--series-1)",
-                  color: "#fff", display: "grid", placeItems: "center",
-                  fontSize: 9, fontWeight: 700, letterSpacing: ".02em",
-                }}>FTP</span>
-                <span style={{ fontSize: 12, fontWeight: 600,
-                               color: "var(--text-primary)", whiteSpace: "nowrap" }}>
-                  Profitability
-                </span>
+                <img src="/dataedge_logo.png" alt="Data Edge Ltd" style={{
+                  height: 24, width: "auto", maxWidth: 170, objectFit: "contain",
+                }} />
               </div>
             )}
 
@@ -208,6 +197,19 @@ function Shell() {
         <div style={{ padding: "12px 20px 28px", flex: 1, minWidth: 0 }}>
           <Current />
         </div>
+
+        <footer style={{
+          display: "flex", alignItems: "center", justifyContent: "center",
+          gap: 8, padding: "14px 20px 20px", fontSize: 11.5,
+          color: "var(--text-muted)", flexWrap: "wrap",
+          borderTop: "1px solid var(--border)", background: "var(--surface-1)",
+        }}>
+          <span>© {new Date().getFullYear()} Data Edge Ltd</span>
+          <span aria-hidden style={{ opacity: .6 }}>·</span>
+          <span>Powered by Data Edge</span>
+          <span aria-hidden style={{ opacity: .6 }}>·</span>
+          <span>FTP Profitability — Funds Transfer Pricing analytics</span>
+        </footer>
       </main>
     </div>
   );
@@ -252,6 +254,11 @@ function ForcePasswordChange() {
   return (
     <Centered>
       <div style={{ width: "min(400px, 92vw)" }}>
+        <div style={{ textAlign: "center", marginBottom: 14 }}>
+          <img src="/dataedge_logo.png" alt="Data Edge Ltd" style={{
+            height: 32, width: "auto", objectFit: "contain", marginInline: "auto",
+          }} />
+        </div>
         <Card title="Choose a new password"
               subtitle={`${me!.full_name} — the account is still on its initial password`}>
           <form onSubmit={submit} style={{ display: "flex", flexDirection: "column",
@@ -319,40 +326,77 @@ function Login() {
 
   const field: React.CSSProperties = {
     width: "100%", background: "var(--surface-1)", borderRadius: 8,
-    border: "1px solid var(--border-strong)", padding: "9px 11px", fontSize: 14,
+    border: "1px solid var(--border-strong)", padding: "10px 12px", fontSize: 14,
+    transition: "border-color .12s ease",
+  };
+  const group: React.CSSProperties = {
+    fontSize: 12, display: "block", marginBottom: 6, color: "var(--text-secondary)",
+    fontWeight: 600, letterSpacing: ".02em",
   };
 
   return (
-    <Centered>
-      <div style={{ width: "min(360px, 92vw)" }}>
-        <Card title="FTP Profitability" subtitle="Sign in to continue">
-          <form onSubmit={submit} style={{ display: "flex", flexDirection: "column",
-                                           gap: 12, padding: "6px 4px 2px" }}>
-            <label style={{ fontSize: 12 }}>
-              <span style={{ display: "block", marginBottom: 4,
-                             color: "var(--text-muted)" }}>Username</span>
-              <input style={field} value={username} autoComplete="username"
-                     onChange={(e) => setUsername(e.target.value)} />
-            </label>
-            <label style={{ fontSize: 12 }}>
-              <span style={{ display: "block", marginBottom: 4,
-                             color: "var(--text-muted)" }}>Password</span>
-              <input style={field} type="password" value={password}
-                     autoComplete="current-password"
-                     onChange={(e) => setPassword(e.target.value)} />
-            </label>
-            {error && (
-              <div style={{ fontSize: 12.5, color: "var(--status-critical)" }}>
-                <Pill tone="critical">Sign-in failed</Pill>
-                <span style={{ marginLeft: 6 }}>{error}</span>
-              </div>
-            )}
-            <Button type="submit" variant="primary" disabled={busy || !password}>
-              {busy ? "Signing in…" : "Sign in"}
-            </Button>
-          </form>
-        </Card>
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column",
+                  background: "var(--page)" }}>
+      <div style={{ flex: 1, display: "grid", placeItems: "center", padding: "36px 20px 60px" }}>
+        <div style={{ width: "min(400px, 100%)", display: "flex", flexDirection: "column" }}>
+          {/* Brand */}
+          <div style={{ textAlign: "center", marginBottom: 26 }}>
+            <img src="/dataedge_logo.png" alt="Data Edge Ltd"
+                 style={{ height: 40, width: "auto", maxWidth: "100%",
+                          objectFit: "contain", marginInline: "auto" }} />
+          </div>
+
+          {/* Card */}
+          <div style={{
+            background: "var(--surface-1)", borderRadius: 14,
+            border: "1px solid var(--border)", boxShadow: "var(--shadow)",
+            padding: "28px",
+          }}>
+            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700,
+                         color: "var(--text-primary)" }}>Sign in</h1>
+            <p style={{ margin: "4px 0 22px", fontSize: 13, color: "var(--text-muted)",
+                        lineHeight: 1.5 }}>
+              FTP Profitability — Funds Transfer Pricing analytics.
+            </p>
+
+            <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <label style={{ display: "block" }}>
+                <span style={group}>Username</span>
+                <input style={field} value={username} autoComplete="username"
+                       onChange={(e) => setUsername(e.target.value)} />
+              </label>
+              <label style={{ display: "block" }}>
+                <span style={group}>Password</span>
+                <input style={field} type="password" value={password}
+                       autoComplete="current-password"
+                       onChange={(e) => setPassword(e.target.value)} />
+              </label>
+
+              {error && (
+                <div style={{
+                  display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12.5,
+                  color: "var(--status-critical)", background: "var(--surface-sunken)",
+                  border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px",
+                }}>
+                  <span aria-hidden style={{ fontWeight: 700 }}>⚠</span>
+                  <span>{error}</span>
+                </div>
+              )}
+
+              <Button type="submit" variant="primary" disabled={busy || !password}
+                      style={{ width: "100%", padding: "10px 14px", marginTop: 2 }}>
+                {busy ? "Signing in…" : "Sign in"}
+              </Button>
+            </form>
+          </div>
+
+          {/* Footer */}
+          <p style={{ textAlign: "center", margin: "20px 0 0", fontSize: 11.5,
+                      color: "var(--text-muted)" }}>
+            © {new Date().getFullYear()} Data Edge Ltd · Powered by Data Edge
+          </p>
+        </div>
       </div>
-    </Centered>
+    </div>
   );
 }

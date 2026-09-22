@@ -199,9 +199,9 @@ export function Table<T>({
 // Small pieces
 // --------------------------------------------------------------------------
 
-export function MiniButton({ children, onClick, active, title, disabled }: {
+export function MiniButton({ children, onClick, active, title, disabled, style }: {
   children: ReactNode; onClick?: () => void; active?: boolean; title?: string;
-  disabled?: boolean;
+  disabled?: boolean; style?: React.CSSProperties;
 }) {
   return (
     <button type="button" onClick={disabled ? undefined : onClick} title={title}
@@ -211,15 +211,15 @@ export function MiniButton({ children, onClick, active, title, disabled }: {
       borderRadius: 6, padding: "3px 9px", fontSize: 11.5,
       cursor: disabled ? "not-allowed" : "pointer",
       opacity: disabled ? .45 : 1, fontWeight: active ? 600 : 500,
-      whiteSpace: "nowrap",
+      whiteSpace: "nowrap", ...style,
     }}>{children}</button>
   );
 }
 
-export function Button({ children, onClick, variant = "default", disabled, type = "button" }: {
+export function Button({ children, onClick, variant = "default", disabled, type = "button", style }: {
   children: ReactNode; onClick?: () => void;
   variant?: "default" | "primary" | "danger"; disabled?: boolean;
-  type?: "button" | "submit";
+  type?: "button" | "submit"; style?: React.CSSProperties;
 }) {
   const styles = {
     default: { bg: "var(--surface-1)", fg: "var(--text-primary)", bd: "var(--border-strong)" },
@@ -231,6 +231,7 @@ export function Button({ children, onClick, variant = "default", disabled, type 
       background: styles.bg, color: styles.fg, border: `1px solid ${styles.bd}`,
       borderRadius: 7, padding: "7px 14px", fontSize: 13, fontWeight: 550,
       cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? .5 : 1,
+      ...style,
     }}>{children}</button>
   );
 }
@@ -272,6 +273,65 @@ export function ViewToggle({ view, setView }: {
 
 export function useView() {
   return useState<"chart" | "table">("chart");
+}
+
+/** 1st, 2nd, 3rd, 4th … 11th, 12th, 13th, 21st … */
+const ordinal = (n: number) => {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+};
+
+/**
+ * "showing 1st … 5 branches\n· based on …" — a window picker for a bar chart
+ * that shows a page of items rather than the whole list. The caller slices the
+ * ranked data; this widget only chooses the 5-item window and, optionally, the
+ * ranking basis the window is cut from. Stacks into up to two short lines so
+ * it can ride beside the card title without making the card taller.
+ */
+export function RankFilter({
+  count, page, onPage, rank, ranks, onRank, pageSize = 5, unit,
+}: {
+  count: number; page: number; onPage: (p: number) => void;
+  rank?: string; ranks?: { id: string; label: string }[]; onRank?: (r: string) => void;
+  pageSize?: number; unit: string;
+}) {
+  const chunks = Math.max(1, Math.ceil(count / pageSize));
+  const safe = Math.min(Math.max(page, 0), chunks - 1);
+  const select: React.CSSProperties = {
+    background: "var(--surface-1)", border: "1px solid var(--border-strong)",
+    borderRadius: 6, padding: "2px 6px", fontSize: 11.5,
+    color: "var(--text-primary)", minWidth: 0, cursor: "pointer",
+  };
+  const row: React.CSSProperties = {
+    display: "flex", alignItems: "center", gap: 5, whiteSpace: "nowrap",
+  };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end",
+                  gap: 4, fontSize: 11, color: "var(--text-muted)" }}>
+      <div style={row}>
+        <span>showing</span>
+        <select style={select} value={safe} disabled={count === 0}
+                onChange={(e) => onPage(+e.target.value)}
+                aria-label={`Which ${pageSize}-item window`}>
+          {Array.from({ length: chunks }, (_, i) => (
+            <option key={i} value={i}>{ordinal(i + 1)}</option>
+          ))}
+        </select>
+        <span>{pageSize} {unit}</span>
+      </div>
+      {ranks && rank != null && onRank && (
+        <div style={row}>
+          <span>based on</span>
+          <select style={select} value={rank}
+                  onChange={(e) => onRank(e.target.value)}
+                  aria-label="Ranking basis">
+            {ranks.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+          </select>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function Empty({ title, hint, action }: {

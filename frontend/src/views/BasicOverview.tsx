@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
+import type { Series } from "../api";
 import Chart, { axisCommon, baseOption, useTokens } from "../components/Chart";
-import { Card, Empty, Grid, Stat } from "../components/ui";
+import { Card, Empty, Grid, RankFilter, Stat } from "../components/ui";
 import ProfitSummary from "../components/ProfitSummary";
 import { compact, longDate, money, n, pct, shortDate } from "../format";
 import { useApp, useAsync } from "../state";
@@ -10,6 +11,20 @@ type Level = "division" | "district" | "branch";
 
 const TILE_H = 104;
 const GAP = 14;
+const TOP_N = 5;
+
+/** The three ranking basis the branch charts can be cut on. */
+const BRANCH_RANKS = [
+  { id: "net", label: "Net FTP profit" },
+  { id: "asset", label: "Asset FTP profit" },
+  { id: "liability", label: "Liability FTP profit" },
+] as const;
+type BranchRank = (typeof BRANCH_RANKS)[number]["id"];
+
+const rankValue = (r: Series, rank: BranchRank) =>
+  rank === "asset" ? n(r.asset_ftp_profit)
+  : rank === "liability" ? n(r.liability_ftp_profit)
+  : n(r.net_ftp_profit);
 
 export default function BasicOverview() {
   const { filters } = useApp();
@@ -25,6 +40,13 @@ export default function BasicOverview() {
   // tiles exactly: (containerWidth - 4 gaps) / 5 columns.
   const pageRef = useRef<HTMLDivElement>(null);
   const [pageW, setPageW] = useState(0);
+
+  // The two branch charts are cut from the same ranking, so they share the
+  // window and basis. The product chart ranks on net only, so it has just a
+  // window of its own.
+  const [branchRank, setBranchRank] = useState<BranchRank>("net");
+  const [branchPage, setBranchPage] = useState(0);
+  const [productPage, setProductPage] = useState(0);
 
   useEffect(() => {
     const onResize = () => setAvail(Math.max(520, window.innerHeight - 132));
@@ -60,6 +82,31 @@ export default function BasicOverview() {
     (a, b) => n(b.net_ftp_profit) - n(a.net_ftp_profit));
   const points = trend.data?.points ?? [];
 
+  // Rank the rows for the top-N window (the 2 branch charts share a basis;
+  // products are always ranked by net). Slicing happens at render time below
+  // so a change of basis or of filter scope is always consistent with the
+  // current page.
+  const rankedBranches = useMemo(
+    () => branchRows.slice().sort((a, b) => rankValue(b, branchRank) - rankValue(a, branchRank)),
+    [branchRows, branchRank]);
+  const branchChunks = Math.max(1, Math.ceil(rankedBranches.length / TOP_N));
+  const productChunks = Math.max(1, Math.ceil(productRows.length / TOP_N));
+
+  // If a filter change shrinks the data (or the basis changes the total pool
+  // of windows), step back so the dropdown never points off the end.
+  useEffect(() => {
+    if (branchPage >= branchChunks) setBranchPage(0);
+  }, [branchChunks, branchPage]);
+  useEffect(() => {
+    if (productPage >= productChunks) setProductPage(0);
+  }, [productChunks, productPage]);
+  useEffect(() => { setBranchPage(0); }, [branchRank]);
+
+  const branchSlice = rankedBranches.slice(
+    branchPage * TOP_N, branchPage * TOP_N + TOP_N);
+  const productSlice = productRows.slice(
+    productPage * TOP_N, productPage * TOP_N + TOP_N);
+
   const levelRows = level === "division" ? (divisions.data ?? [])
                   : level === "district" ? (districts.data ?? [])
                   : (branches.data ?? []);
@@ -87,7 +134,7 @@ export default function BasicOverview() {
 
   // ---- grouped bar: asset vs liability vs net ftp by branch ---------------
   const branchOption = useMemo(() => {
-    const labels = branchRows.map((r) => r.label);
+    const labels = branchSlice.map((r) => r.label);
     return {
       ...baseOption(t),
       grid: { left: 8, right: 16, top: 34, bottom: 4, containLabel: true },
@@ -105,24 +152,24 @@ export default function BasicOverview() {
                             formatter: (v: number) => compact(v) } },
       series: [
         { name: "Asset FTP profit", type: "bar",
-          data: branchRows.map((r) => n(r.asset_ftp_profit)),
+          data: branchSlice.map((r) => n(r.asset_ftp_profit)),
           itemStyle: { color: t.series[0], borderRadius: [2, 2, 0, 0] },
           emphasis: { focus: "series" } },
         { name: "Liability FTP profit", type: "bar",
-          data: branchRows.map((r) => n(r.liability_ftp_profit)),
+          data: branchSlice.map((r) => n(r.liability_ftp_profit)),
           itemStyle: { color: t.series[1], borderRadius: [2, 2, 0, 0] },
           emphasis: { focus: "series" } },
         { name: "Net FTP profit", type: "bar",
-          data: branchRows.map((r) => n(r.net_ftp_profit)),
+          data: branchSlice.map((r) => n(r.net_ftp_profit)),
           itemStyle: { color: t.series[3], borderRadius: [2, 2, 0, 0] },
           emphasis: { focus: "series" } },
       ],
     } as never;
-  }, [branchRows, t]);
+  }, [branchSlice, t]);
 
   // ---- grouped bar: asset vs liability only -------------------------------
   const sideOption = useMemo(() => {
-    const labels = branchRows.map((r) => r.label);
+    const labels = branchSlice.map((r) => r.label);
     return {
       ...baseOption(t),
       grid: { left: 8, right: 16, top: 34, bottom: 4, containLabel: true },
@@ -140,16 +187,16 @@ export default function BasicOverview() {
                             formatter: (v: number) => compact(v) } },
       series: [
         { name: "Asset FTP profit", type: "bar",
-          data: branchRows.map((r) => n(r.asset_ftp_profit)),
+          data: branchSlice.map((r) => n(r.asset_ftp_profit)),
           itemStyle: { color: t.series[0], borderRadius: [2, 2, 0, 0] },
           emphasis: { focus: "series" } },
         { name: "Liability FTP profit", type: "bar",
-          data: branchRows.map((r) => n(r.liability_ftp_profit)),
+          data: branchSlice.map((r) => n(r.liability_ftp_profit)),
           itemStyle: { color: t.series[1], borderRadius: [2, 2, 0, 0] },
           emphasis: { focus: "series" } },
       ],
     } as never;
-  }, [branchRows, t]);
+  }, [branchSlice, t]);
 
   // ---- line: daily net ftp trend ------------------------------------------
   const trendOption = useMemo(() => {
@@ -191,7 +238,7 @@ export default function BasicOverview() {
 
   // ---- bar: product ftp profit --------------------------------------------
   const productOption = useMemo(() => {
-    const rows = productRows;
+    const rows = productSlice;
     return {
       ...baseOption(t),
       grid: { left: 8, right: 60, top: 12, bottom: 4, containLabel: true },
@@ -226,7 +273,7 @@ export default function BasicOverview() {
         emphasis: { itemStyle: { opacity: .85 } },
       }],
     } as never;
-  }, [productRows, t]);
+  }, [productSlice, t]);
 
   if (k.error) return <Empty title="Could not load" hint={k.error} />;
 
@@ -283,8 +330,9 @@ export default function BasicOverview() {
   const topRowHeight = 104;
   const mainAreaHeight = Math.max(240, avail - topRowHeight - 12);
   const chartRowHeight = (mainAreaHeight - 12) / 2;
-  // Card header (~46px) + body padding (~20px) leave this much for the canvas.
-  const chartHeight = Math.max(120, Math.round(chartRowHeight - 62));
+  // Card header (now carries the rank filters, so allow for a wrapped line)
+  // + body padding leave this much for the canvas.
+  const chartHeight = Math.max(120, Math.round(chartRowHeight - 78));
 
   return (
     <div ref={pageRef} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -305,35 +353,64 @@ export default function BasicOverview() {
                         display: "grid", gridTemplateRows: `repeat(2, ${chartRowHeight}px)`,
                         gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <Card title="Branch FTP profitability"
-                  subtitle="Asset, liability and net FTP profit per branch">
-              {!hasBranchData
+                  subtitle="Asset, liability and net FTP profit per branch"
+                  actions={<RankFilter
+                    count={rankedBranches.length}
+                    page={branchPage}
+                    onPage={setBranchPage}
+                    rank={branchRank}
+                    ranks={[...BRANCH_RANKS]}
+                    onRank={(r) => setBranchRank(r as BranchRank)}
+                    unit="branches" />}>
+              {!hasBranchData || branchSlice.length === 0
                 ? <Empty title="No branches in this slice" />
-                : <Chart option={branchOption} height={chartHeight} loading={branches.loading}
-                         ariaLabel="Branch FTP profitability by side" />}
+                : <div style={{ height: "100%", minHeight: 0, overflow: "hidden" }}>
+                    <Chart option={branchOption} height={chartHeight} loading={branches.loading}
+                           ariaLabel="Branch FTP profitability by side" />
+                  </div>}
             </Card>
 
             <Card title="Asset vs Liability FTP"
-                  subtitle="The two sides side-by-side per branch">
-              {!hasBranchData
+                  subtitle="The two sides side-by-side per branch"
+                  actions={<RankFilter
+                    count={rankedBranches.length}
+                    page={branchPage}
+                    onPage={setBranchPage}
+                    rank={branchRank}
+                    ranks={[...BRANCH_RANKS]}
+                    onRank={(r) => setBranchRank(r as BranchRank)}
+                    unit="branches" />}>
+              {!hasBranchData || branchSlice.length === 0
                 ? <Empty title="No branches in this slice" />
-                : <Chart option={sideOption} height={chartHeight} loading={branches.loading}
-                         ariaLabel="Asset versus liability FTP profit by branch" />}
+                : <div style={{ height: "100%", minHeight: 0, overflow: "hidden" }}>
+                    <Chart option={sideOption} height={chartHeight} loading={branches.loading}
+                           ariaLabel="Asset versus liability FTP profit by branch" />
+                  </div>}
             </Card>
 
             <Card title="Daily FTP profit trend"
                   subtitle="Net FTP profit per day in the window">
               {points.length === 0
                 ? <Empty title="No data in this window" hint="Widen the date range or clear a filter." />
-                : <Chart option={trendOption} height={chartHeight} loading={trend.loading}
-                         ariaLabel="Daily net FTP profit trend" />}
+                : <div style={{ height: "100%", minHeight: 0, overflow: "hidden" }}>
+                    <Chart option={trendOption} height={chartHeight} loading={trend.loading}
+                           ariaLabel="Daily net FTP profit trend" />
+                  </div>}
             </Card>
 
             <Card title="Product FTP profit"
-                  subtitle="Net FTP profit by product">
-              {productRows.length === 0
+                  subtitle="Net FTP profit by product"
+                  actions={<RankFilter
+                    count={productRows.length}
+                    page={productPage}
+                    onPage={setProductPage}
+                    unit="products" />}>
+              {productSlice.length === 0
                 ? <Empty title="No products in this slice" />
-                : <Chart option={productOption} height={chartHeight} loading={products.loading}
-                         ariaLabel="Net FTP profit by product" />}
+                : <div style={{ height: "100%", minHeight: 0, overflow: "hidden" }}>
+                    <Chart option={productOption} height={chartHeight} loading={products.loading}
+                           ariaLabel="Net FTP profit by product" />
+                  </div>}
             </Card>
           </div>
         </div>
