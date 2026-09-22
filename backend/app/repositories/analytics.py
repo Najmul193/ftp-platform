@@ -1281,9 +1281,14 @@ class AnalyticsRepo:
             "treasury_funding_of_gap": funding.quantize(MONEY_Q),
             "liquidity_premium": liquidity.quantize(MONEY_Q),
             "other_cost": other.quantize(MONEY_Q),
+            # A share of NII only means something when NII is positive. With a
+            # deposit-heavy book NII can be negative, and dividing by it gives
+            # a figure like -1,248% that reads as a fault rather than as a
+            # book that costs more to fund than it earns.
             "business_units_share_pct": (
-                (business_units / nii * 100).quantize(RATE_Q) if nii else None
+                (business_units / nii * 100).quantize(RATE_Q) if nii > 0 else None
             ),
+            "nii_is_negative": nii < 0,
             #: Proof the split is complete rather than merely plausible.
             "check": (
                 nii + funding + liquidity + other - business_units

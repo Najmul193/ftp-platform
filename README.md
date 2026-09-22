@@ -198,6 +198,26 @@ read time, because an average of averages is not the average.
 
 ---
 
+## Restore points
+
+The database can be snapshotted and rolled back, which is what makes it safe
+to load demo data over real data.
+
+```bash
+./rollback.sh --save     # snapshot the database now
+./rollback.sh --list     # what is available
+./rollback.sh            # roll back to the most recent
+./rollback.sh <stamp>    # roll back to a specific one
+```
+
+Rolling back replaces the whole database, so it takes a safety copy of the
+current state first — a rollback is itself destructive, and the state being
+replaced may be the one someone wanted. It asks for the stamp typed back
+before it proceeds.
+
+Each snapshot also gets a git tag of the same name, so the code that went with
+it is one `git checkout restore-point-<stamp>` away.
+
 ## Configuration
 
 Credentials live in `backend/app/cli/seed.py` (`ADMIN_PASSWORD`,

@@ -159,9 +159,12 @@ export default function Daily() {
         {/* --- NII reconciliation --- */}
         <Card title="Where the customer margin goes"
               subtitle="Net interest income split between business units and treasury"
-              footnote={v
-                ? `Business units keep ${pct(v.business_units_share_pct, 1)} of NII. The treasury retains ${money(v.treasury_retained)} — mostly the cost of funding the net asset position. Reconciliation check ${v.check}.`
-                : undefined}>
+              footnote={!v ? undefined
+                : v.nii_is_negative
+                  ? `Net interest income is negative: this book pays more to depositors than it earns from borrowers, so there is no margin to share out. Business units still show ${money(v.business_units_total)} because FTP credits deposits for the funding they provide; the treasury carries the shortfall. Reconciliation check ${v.check}.`
+                  : v.business_units_share_pct == null
+                    ? `The treasury retains ${money(v.treasury_retained)} — mostly the cost of funding the net asset position. Reconciliation check ${v.check}.`
+                    : `Business units keep ${pct(v.business_units_share_pct, 1)} of NII. The treasury retains ${money(v.treasury_retained)} — mostly the cost of funding the net asset position. Reconciliation check ${v.check}.`}>
           {!niiOption ? <Empty title="No data" />
             : <Chart option={niiOption} height={262} loading={nii.loading}
                      ariaLabel="Net interest income reconciled to FTP" />}

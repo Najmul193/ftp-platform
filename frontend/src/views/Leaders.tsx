@@ -28,23 +28,41 @@ export default function Leaders() {
   // at zero and its height is directly readable.
   // Fixed product order, and therefore fixed colours: a product keeps its hue
   // in the chart, the legend and the table, whatever its rank in a given area.
+  //
+  // The palette has eight categorical slots and a ninth hue would be
+  // indistinguishable from one already in use. Past seven the tail folds into
+  // a single "Other" series rather than being dropped: a product missing from
+  // a chart that claims to show the book is worse than one shown as a total.
+  const CHART_SLOTS = 7;
+  const allProducts = useMemo(() => {
+    const totals = new Map<string, number>();
+    (lead.data?.areas ?? []).forEach((a) => a.breakdown.forEach((b) => {
+      totals.set(b.product_code, (totals.get(b.product_code) ?? 0) + n(b.net_ftp_profit));
+    }));
+    return [...totals.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c);
+  }, [lead.data]);
+
   const productOrder = useMemo(
-    () => Array.from(new Set((lead.data?.areas ?? [])
-      .flatMap((a) => a.breakdown.map((b) => b.product_code)))).slice(0, 8),
-    [lead.data],
-  );
+    () => allProducts.slice(0, CHART_SLOTS), [allProducts]);
+  const tailProducts = useMemo(
+    () => allProducts.slice(CHART_SLOTS), [allProducts]);
+  const OTHER = "Other products";
   const colourOf = useMemo(
     () => (code: string) => {
+      if (code === OTHER) return t.series[7];
       const i = productOrder.indexOf(code);
-      return i >= 0 ? t.series[i] : t.muted;
+      // A product in the folded tail takes the "Other" colour, so the table
+      // swatch still matches what the chart drew.
+      return i >= 0 ? t.series[i] : (tailProducts.includes(code) ? t.series[7] : t.muted);
     },
-    [productOrder, t],
+    [productOrder, tailProducts, t],
   );
 
   const leadOption = useMemo(() => {
     const areas = lead.data?.areas ?? [];
     if (!areas.length) return null;
-    const products = productOrder;
+    const products = tailProducts.length
+      ? [...productOrder, OTHER] : productOrder;
     return {
       ...baseOption(t),
       grid: { left: 8, right: 16, top: 34, bottom: 4, containLabel: true },
@@ -82,11 +100,13 @@ export default function Leaders() {
         barCategoryGap: "32%",
         itemStyle: { color: colourOf(code), borderRadius: [3, 3, 0, 0] },
         emphasis: { focus: "series" },
-        data: areas.map((a) =>
-          n(a.breakdown.find((b) => b.product_code === code)?.net_ftp_profit ?? 0)),
+        data: areas.map((a) => (code === OTHER
+          ? a.breakdown.filter((b) => tailProducts.includes(b.product_code))
+              .reduce((sum, b) => sum + n(b.net_ftp_profit), 0)
+          : n(a.breakdown.find((b) => b.product_code === code)?.net_ftp_profit ?? 0))),
       })),
     } as never;
-  }, [lead.data, t, productOrder, colourOf]);
+  }, [lead.data, t, productOrder, tailProducts, colourOf]);
 
   const h = head.data;
 
@@ -237,6 +257,15 @@ export default function Leaders() {
               {leadOption && (
                 <Chart option={leadOption} height={250} loading={lead.loading}
                        ariaLabel={`Net FTP profit by product, grouped by ${area}`} />
+              )}
+              {tailProducts.length > 0 && (
+                <p style={{ margin: "4px 4px 0", fontSize: 11.5,
+                            color: "var(--text-muted)" }}>
+                  The palette carries eight series, so the smallest{" "}
+                  {tailProducts.length} of {allProducts.length} products —{" "}
+                  {tailProducts.join(", ")} — are drawn together as “{OTHER}”.
+                  Each still appears on its own in the table below.
+                </p>
               )}
               <div style={{ marginTop: 10 }}>
                 <Table csvName={`ftp-product-leadership-${area}.csv`}

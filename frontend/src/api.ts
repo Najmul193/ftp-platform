@@ -475,7 +475,7 @@ export interface Nii {
   business_units_total: Num; lending_spread: Num; deposit_spread: Num;
   treasury_retained: Num; treasury_funding_of_gap: Num;
   liquidity_premium: Num; other_cost: Num;
-  business_units_share_pct: Num | null; check: Num;
+  business_units_share_pct: Num | null; nii_is_negative: boolean; check: Num;
 }
 export interface Ratios {
   yield_on_advances_pct: Num | null; cost_of_deposits_pct: Num | null;
