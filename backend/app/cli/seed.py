@@ -159,8 +159,7 @@ def seed() -> None:
                 other_cost=Decimal("0.05"),
                 effective_from=EFFECTIVE_FROM,
                 status="APPROVED",
-                note="Seeded from FTP1.xlsm: liquidity and other cost were "
-                     "uniform across all five products.",
+                note="Initial configuration.",
             ))
 
         for code, _short, _side, _nature, benchmark, _details in PRODUCTS:

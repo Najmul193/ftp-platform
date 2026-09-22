@@ -4,6 +4,7 @@ import { Button, Card, Pill } from "./components/ui";
 import { api } from "./api";
 import { AppProvider, currentView, useApp } from "./state";
 import Accounts from "./views/Accounts";
+import Activity from "./views/Activity";
 import Admin from "./views/Admin";
 import BasicOverview from "./views/BasicOverview";
 import Consolidated from "./views/Consolidated";
@@ -11,6 +12,7 @@ import Analytics from "./views/Analytics";
 import Daily from "./views/Daily";
 import Leaders from "./views/Leaders";
 import Overview from "./views/Overview";
+import Rates from "./views/Rates";
 import Upload from "./views/Upload";
 
 //: Basic overview is first and is where a session lands after sign-in.
@@ -26,6 +28,8 @@ const NAV = [
   { id: "consolidated", label: "Consolidated", group: "Analyse" },
   { id: "upload", label: "Upload", group: "Operate", perm: "UPLOAD_VIEW" },
   { id: "admin", label: "Master data", group: "Operate", perm: "MASTER_BRANCH_VIEW" },
+  { id: "rates", label: "Rate configuration", group: "Operate", perm: "CONFIG_RATE_VIEW" },
+  { id: "activity", label: "Activity log", group: "Operate", perm: "AUDIT_VIEW" },
 ];
 
 export default function App() {
@@ -67,7 +71,7 @@ function Shell() {
   const Current = { basic: BasicOverview, consolidated: Consolidated,
                     daily: Daily, overview: Overview, analytics: Analytics,
                     leaders: Leaders, accounts: Accounts, upload: Upload,
-                    admin: Admin }[view] ?? Daily;
+                    admin: Admin, rates: Rates, activity: Activity }[view] ?? Daily;
 
   const activeFilterCount = (Object.entries(filters) as [string, unknown][]).reduce(
     (n, [, v]) => n + (Array.isArray(v) ? v.length : v ? 1 : 0), 0,

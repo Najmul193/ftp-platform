@@ -21,6 +21,7 @@ from app.models import (
     BankDailyAccountData, FtpCalculationResult, Product, ProductRateConfig,
 )
 from app.services import audit
+from app.services.config import GlobalConfigService
 
 
 class ProductError(Exception):
@@ -97,6 +98,19 @@ class ProductService:
             if liability_nature:
                 raise ProductError("an asset product cannot have liability_nature")
             nature = None
+
+        # A product benchmark always overrides the global one. Where the global
+        # layer supplies none, the product's own is therefore the only source
+        # and is mandatory -- checked here rather than left to fail at the
+        # first calculation, which presents as an unrelated problem.
+        if benchmark_rate is None:
+            global_cfg = GlobalConfigService(self.s).in_force(
+                effective_from or date.today())
+            if global_cfg is None or global_cfg.benchmark_rate is None:
+                raise ProductError(
+                    "a benchmark rate is required: the global configuration "
+                    "does not supply one, so this product would not be priceable"
+                )
 
         product = Product(
             product_code=code, short_name=short_name.strip(), details=details,

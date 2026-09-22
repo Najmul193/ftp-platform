@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.v1 import (
-    analytics, auth, dashboard, org, products, system, uploads,
+    analytics, audit, auth, config, dashboard, org, products, system, uploads,
 )
 from app.core.config import settings
 from app.core.db import healthcheck
@@ -74,5 +74,6 @@ def health():
 
 
 for r in (auth.router, dashboard.router, analytics.router, org.router,
-          products.router, uploads.router, system.router):
+          products.router, config.router, audit.router, uploads.router,
+          system.router):
     app.include_router(r, prefix=settings.API_V1_PREFIX)

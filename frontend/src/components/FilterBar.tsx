@@ -22,6 +22,21 @@ export default function FilterBar({ collapsed = false }: { collapsed?: boolean }
     ? districts.filter((d) => d.division_id === filters.division_id)
     : districts;
 
+  // The branch list narrows the same way the district list does. District is
+  // the tighter of the two, so it wins when both are set. A branch whose
+  // division_id is absent is placed by its district, so a division selection
+  // never silently drops it.
+  const visibleBranches = branches.filter((b) => {
+    if (!b.is_active) return false;
+    if (filters.district_id) return b.district_id === filters.district_id;
+    if (filters.division_id) {
+      const division = b.division_id
+        ?? districts.find((d) => d.id === b.district_id)?.division_id;
+      return division === filters.division_id;
+    }
+    return true;
+  });
+
   const chips: { k: string; text: string; clear: () => void }[] = [];
   if (filters.date_from || filters.date_to)
     chips.push({ k: "d", text: `${filters.date_from ?? "…"} → ${filters.date_to ?? "…"}`,
@@ -122,7 +137,7 @@ export default function FilterBar({ collapsed = false }: { collapsed?: boolean }
                       onChange={(e) => setFilters((f) => ({
                         ...f, branch_id: e.target.value ? [+e.target.value] : undefined }))}>
                 <option value="">All</option>
-                {branches.filter((b) => b.is_active).map((b) => (
+                {visibleBranches.map((b) => (
                   <option key={b.id} value={b.id}>{b.branch_code} — {b.branch_name}</option>
                 ))}
               </select>

@@ -156,6 +156,37 @@ export const api = {
   reactivateBranch: (code: string) =>
     request<Branch>(`/branches/${code}/reactivate`, { method: "POST" }),
 
+  // --- rate configuration -------------------------------------------------
+  /** The global defaults in force on a date. 404 when none is, which is a
+   *  configuration fault rather than an empty state. */
+  globalConfig: (on?: string) =>
+    request<GlobalConfig>(`/config/global${qs({}, on ? { on } : {})}`),
+  globalConfigHistory: (limit = 100) =>
+    request<GlobalConfig[]>(`/config/global/history${qs({}, { limit })}`),
+  /** Change the defaults from a date, keeping the superseded version intact. */
+  setGlobalConfig: (b: GlobalConfigUpdate) =>
+    request<GlobalConfig>("/config/global", {
+      method: "PUT", body: JSON.stringify(b),
+    }),
+  /** Fix the current version in place. 409 once it has priced anything. */
+  correctGlobalConfig: (b: GlobalConfigUpdate) =>
+    request<GlobalConfig>("/config/global", {
+      method: "PATCH", body: JSON.stringify(b),
+    }),
+  /** What the engine would use for a product, and which layer supplied each
+   *  component -- the view that makes the override model legible. */
+  productRates: (code: string, on?: string) =>
+    request<ProductRates>(`/products/${code}/rates${qs({}, on ? { on } : {})}`),
+  setProductRate: (code: string, b: ProductRateUpdate) =>
+    request<{ product_code: string; version: number; benchmark_rate: string;
+              effective_from: string }>(
+      `/products/${code}/rates`, { method: "POST", body: JSON.stringify(b) }),
+
+  // --- audit trail --------------------------------------------------------
+  auditLog: (f: AuditFilters = {}) =>
+    request<PageOf<AuditEntry>>(`/audit${qs({}, { ...f })}`),
+  auditEntry: (id: number) => request<AuditEntryDetail>(`/audit/${id}`),
+
   // --- uploads ------------------------------------------------------------
   probe: (file: File) => {
     const fd = new FormData();
@@ -375,6 +406,84 @@ export interface NewProduct {
   product_code: string; short_name: string; side: "ASSET" | "LIABILITY";
   benchmark_rate?: string; liability_nature?: "DEMAND" | "TIME" | null;
   details?: string | null;
+}
+
+export type DayCountBasis = "ACT_365" | "ACT_360";
+
+/** One version of the global rate defaults.
+ *
+ *  `benchmark_rate` is nullable on purpose: null means the global layer offers
+ *  no benchmark, so every product must carry its own override. That is what
+ *  turns a missing benchmark into a hard error instead of a silent zero. */
+export interface GlobalConfig {
+  version: number;
+  benchmark_rate: Num | null;
+  liquidity_cost: Num | null;
+  other_cost: Num | null;
+  day_count_basis: DayCountBasis;
+  effective_from: string;
+  effective_to: string | null;
+  note: string | null;
+  /** Completed runs and rows this version priced. Non-zero runs is why the UI
+   *  offers a new version rather than an in-place correction. */
+  runs_priced: number;
+  rows_priced: number;
+  editable_in_place: boolean;
+}
+
+/** Only the fields supplied are changed; the rest carry forward. */
+export interface GlobalConfigUpdate {
+  benchmark_rate?: string | null;
+  liquidity_cost?: string;
+  other_cost?: string;
+  day_count_basis?: DayCountBasis;
+  effective_from?: string;
+  note?: string | null;
+}
+
+export interface ProductRates {
+  product_code: string;
+  benchmark_rate: Num | null; benchmark_source: string;
+  liquidity_cost: Num; liquidity_source: string;
+  other_cost: Num; other_source: string;
+  effective_on: string;
+}
+
+/** `null` on a component means inherit the global default; `"0"` is an
+ *  explicit zero override. The two are not the same thing. */
+export interface ProductRateUpdate {
+  benchmark_rate: string;
+  liquidity_cost?: string | null;
+  other_cost?: string | null;
+  effective_from?: string;
+}
+
+export interface AuditFilters {
+  entity_type?: string[];
+  entity_id?: string;
+  action?: string[];
+  actor?: string;
+  date_from?: string;
+  date_to?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface AuditEntry {
+  id: number;
+  occurred_at: string;
+  actor_username: string | null;
+  actor_scope: string | null;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  /** Changed keys only. Null on a create or a delete, where one side is absent. */
+  diff: Record<string, { from: unknown; to: unknown }> | null;
+}
+
+export interface AuditEntryDetail extends AuditEntry {
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
 }
 
 export interface Probe {
