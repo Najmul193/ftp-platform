@@ -1,13 +1,15 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import Chart, { axisCommon, baseOption, useTokens } from "../components/Chart";
 import { Card, Empty, Grid, Stat } from "../components/ui";
-import { compact, money, n, pct, shortDate } from "../format";
 import ProfitSummary from "../components/ProfitSummary";
-import { longDate } from "../format";
+import { compact, longDate, money, n, pct, shortDate } from "../format";
 import { useApp, useAsync } from "../state";
 
 type Level = "division" | "district" | "branch";
+
+const TILE_H = 104;
+const GAP = 14;
 
 export default function BasicOverview() {
   const { filters } = useApp();
@@ -16,6 +18,33 @@ export default function BasicOverview() {
   // screen at once, and drilling down is a click. Starting at branch level
   // would open on a few hundred rows nobody asked for.
   const [level, setLevel] = useState<Level>("division");
+  // Fit the top block in one viewport: the tallest fixed chrome above the
+  // content (sticky dock + status row + page padding) is ~132px.
+  const [avail, setAvail] = useState(Math.max(520, window.innerHeight - 132));
+  // Width of the page container, measured so the left rail can match the top
+  // tiles exactly: (containerWidth - 4 gaps) / 5 columns.
+  const pageRef = useRef<HTMLDivElement>(null);
+  const [pageW, setPageW] = useState(0);
+
+  useEffect(() => {
+    const onResize = () => setAvail(Math.max(520, window.innerHeight - 132));
+    onResize();
+    window.addEventListener("resize", onResize);
+
+    // The container width changes whenever the collapsible sidebar toggles,
+    // which never fires a window resize, so watch the page itself.
+    let ro: ResizeObserver | undefined;
+    if (pageRef.current) {
+      ro = new ResizeObserver(() => setPageW(pageRef.current!.clientWidth));
+      ro.observe(pageRef.current);
+    }
+    return () => {
+      window.removeEventListener("resize", onResize);
+      ro?.disconnect();
+    };
+  }, []);
+
+  const leftWidth = Math.max(220, Math.round((pageW - GAP * 4) / 5));
 
   const k = useAsync(() => api.kpis(filters), [filters]);
   const branches = useAsync(() => api.byBranch(filters), [filters]);
@@ -203,80 +232,114 @@ export default function BasicOverview() {
 
   const hasBranchData = branchRows.length > 0;
 
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div>
-        <div style={{ fontSize: 17, fontWeight: 700, color: "var(--text-primary)" }}>
-          Branch FTP Profitability Dashboard
+  // Top row of balance stats: stretches across the full page width so the
+  // tiles grow into the space the chart grid leaves empty on the right.
+  const topStats = (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+                  gap: GAP }}>
+      <div style={{ height: TILE_H, display: "grid" }}>
+        <Stat label="Asset balance" value={compact(kpis?.asset_balance)}
+              hint="total before liabilities" />
+      </div>
+      <div style={{ height: TILE_H, display: "grid" }}>
+        <Stat label="Liability balance" value={compact(kpis?.liability_balance)}
+              hint="total borrowings and deposits" />
+      </div>
+      <div style={{ height: TILE_H, display: "grid" }}>
+        <Stat label="Interest receivable" value={money(kpis?.interest_receivable)}
+              hint="earned on the book" />
+      </div>
+      <div style={{ height: TILE_H, display: "grid" }}>
+        <Stat label="Interest payable" value={money(kpis?.interest_payable)}
+              hint="cost of the book" />
+      </div>
+      <div style={{ height: TILE_H, display: "grid" }}>
+        <Stat label="Branches" value={String(kpis?.branch_count ?? 0)}
+              hint={`${kpis?.day_count ?? 0} day${(kpis?.day_count ?? 0) === 1 ? "" : "s"}`} />
+      </div>
+    </div>
+  );
+
+  // Left rail: the five FTP headline stats, same tile size as the top row.
+  const ftpStats = (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10, flex: 1, minHeight: 0 }}>
+      {[
+        ["Asset FTP profit", money(kpis?.asset_ftp_profit), "funding benefit on assets"],
+        ["Liability FTP profit", money(kpis?.liability_ftp_profit), "funding cost on liabilities"],
+        ["Net FTP profit", money(kpis?.net_ftp_profit), "asset + liability FTP"],
+        ["FTP / balance", pct(kpis?.ftp_over_balance_pct, 4), "annualised rate"],
+        ["No. of days", String(kpis?.day_count ?? 0), "covered by the filters"],
+      ].map(([label, value, hint]) => (
+        <div key={label} style={{ height: TILE_H, display: "grid" }}>
+          <Stat label={label} value={value} hint={hint} />
         </div>
-        <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-          Basic overview — balances, interest and FTP profit for the selected filters.
+      ))}
+    </div>
+  );
+
+  // One screen, nothing scrolls. Everything is a multiple of `avail`, so the
+  // page reflows on resize instead of overflowing. Top row keeps its natural
+  // height (~104px); the chart rows split the remainder.
+  const topRowHeight = 104;
+  const mainAreaHeight = Math.max(240, avail - topRowHeight - 12);
+  const chartRowHeight = (mainAreaHeight - 12) / 2;
+  // Card header (~46px) + body padding (~20px) leave this much for the canvas.
+  const chartHeight = Math.max(120, Math.round(chartRowHeight - 62));
+
+  return (
+    <div ref={pageRef} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* ---- the fixed no-scroll block ----------------------------------- */}
+      <div style={{ height: avail, display: "flex", flexDirection: "column",
+                    gap: 12, minHeight: 0, overflow: "hidden" }}>
+        {topStats}
+
+        <div style={{ flex: 1, minHeight: 0, display: "flex", gap: 14 }}>
+          {/* Left: five headline FTP stats stacked to full height */}
+<div style={{ display: "flex", minWidth: 200, width: leftWidth, flexShrink: 0,
+                      justifyContent: "center" }}>
+          {ftpStats}
+        </div>
+
+          {/* Right: the four charts in a 2x2 grid that fills the rest */}
+          <div style={{ flex: 1, minWidth: 0,
+                        display: "grid", gridTemplateRows: `repeat(2, ${chartRowHeight}px)`,
+                        gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Card title="Branch FTP profitability"
+                  subtitle="Asset, liability and net FTP profit per branch">
+              {!hasBranchData
+                ? <Empty title="No branches in this slice" />
+                : <Chart option={branchOption} height={chartHeight} loading={branches.loading}
+                         ariaLabel="Branch FTP profitability by side" />}
+            </Card>
+
+            <Card title="Asset vs Liability FTP"
+                  subtitle="The two sides side-by-side per branch">
+              {!hasBranchData
+                ? <Empty title="No branches in this slice" />
+                : <Chart option={sideOption} height={chartHeight} loading={branches.loading}
+                         ariaLabel="Asset versus liability FTP profit by branch" />}
+            </Card>
+
+            <Card title="Daily FTP profit trend"
+                  subtitle="Net FTP profit per day in the window">
+              {points.length === 0
+                ? <Empty title="No data in this window" hint="Widen the date range or clear a filter." />
+                : <Chart option={trendOption} height={chartHeight} loading={trend.loading}
+                         ariaLabel="Daily net FTP profit trend" />}
+            </Card>
+
+            <Card title="Product FTP profit"
+                  subtitle="Net FTP profit by product">
+              {productRows.length === 0
+                ? <Empty title="No products in this slice" />
+                : <Chart option={productOption} height={chartHeight} loading={products.loading}
+                         ariaLabel="Net FTP profit by product" />}
+            </Card>
+          </div>
         </div>
       </div>
 
-      <Grid cols="repeat(auto-fit, minmax(180px, 1fr))">
-        <Stat label="Asset balance" value={compact(kpis?.asset_balance)}
-              hint="total before liabilities" />
-        <Stat label="Liability balance" value={compact(kpis?.liability_balance)}
-              hint="total borrowings and deposits" />
-        <Stat label="Interest receivable" value={money(kpis?.interest_receivable)}
-              hint="earned on the book" />
-        <Stat label="Interest payable" value={money(kpis?.interest_payable)}
-              hint="cost of the book" />
-        <Stat label="Branches" value={String(kpis?.branch_count ?? 0)}
-              hint="in scope" />
-      </Grid>
-
-      <Grid cols="repeat(auto-fit, minmax(180px, 1fr))">
-        <Stat label="Asset FTP profit" value={money(kpis?.asset_ftp_profit)}
-              hint="funding benefit on assets" />
-        <Stat label="Liability FTP profit" value={money(kpis?.liability_ftp_profit)}
-              hint="funding cost on liabilities" />
-        <Stat label="Net FTP profit" value={money(kpis?.net_ftp_profit)}
-              hint="asset + liability FTP" />
-        <Stat label="FTP / balance" value={pct(kpis?.ftp_over_balance_pct, 4)}
-              hint="annualised rate" />
-        <Stat label="No. of days" value={String(kpis?.day_count ?? 0)}
-              hint="covered by the filters" />
-      </Grid>
-
-      <Grid cols="minmax(0, 1fr) minmax(0, 1fr)">
-        <Card title="Branch FTP profitability"
-              subtitle="Asset, liability and net FTP profit per branch">
-          {!hasBranchData
-            ? <Empty title="No branches in this slice" />
-            : <Chart option={branchOption} height={286} loading={branches.loading}
-                     ariaLabel="Branch FTP profitability by side" />}
-        </Card>
-
-        <Card title="Asset vs Liability FTP"
-              subtitle="The two sides side-by-side per branch">
-          {!hasBranchData
-            ? <Empty title="No branches in this slice" />
-            : <Chart option={sideOption} height={286} loading={branches.loading}
-                     ariaLabel="Asset versus liability FTP profit by branch" />}
-        </Card>
-      </Grid>
-
-      <Grid cols="minmax(0, 1fr) minmax(0, 1fr)">
-        <Card title="Daily FTP profit trend"
-              subtitle="Net FTP profit per day in the window">
-          {points.length === 0
-            ? <Empty title="No data in this window" hint="Widen the date range or clear a filter." />
-            : <Chart option={trendOption} height={260} loading={trend.loading}
-                     ariaLabel="Daily net FTP profit trend" />}
-        </Card>
-
-        <Card title="Product FTP profit"
-              subtitle="Net FTP profit by product">
-          {productRows.length === 0
-            ? <Empty title="No products in this slice" />
-            : <Chart option={productOption} height={260} loading={products.loading}
-                     ariaLabel="Net FTP profit by product" />}
-        </Card>
-      </Grid>
-
-      {/* ---- the workbook's three summary sheets ------------------------ */}
+      {/* ---- the workbook's three summary sheets ------------------------- */}
       <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16,
                     marginTop: 2 }}>
         <h2 style={{ margin: "0 0 2px", fontSize: 15, fontWeight: 650 }}>

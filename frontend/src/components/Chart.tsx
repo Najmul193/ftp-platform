@@ -85,7 +85,7 @@ export const axisCommon = (t: Tokens) => ({
 
 interface Props {
   option: echarts.EChartsOption;
-  height?: number;
+  height?: number | string;
   /** Cross-filtering: a click on any mark reports its category. */
   onSelect?: (name: string) => void;
   loading?: boolean;
