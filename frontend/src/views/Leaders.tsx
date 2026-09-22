@@ -97,6 +97,28 @@ export default function Leaders() {
         {(["branch", "product", "division", "district", "category"] as const).map((dim) => {
           const v = h?.[dim];
           if (!v) return null;
+
+          // One member is not a ranking. Naming the same row as both the best
+          // and the worst performer is arithmetically true and says nothing;
+          // show its figures once and state why there is no comparison.
+          if (!v.rankable) {
+            const only = v.top_by_profit;
+            return (
+              <Card key={dim} title={`Top ${dim}`} subtitle={`1 in this slice`}
+                    footnote={`Only one ${dim} is in scope, so there is nothing to rank it against. Widen the filters to compare.`}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10,
+                              padding: "2px 4px" }}>
+                  <Row label={`The only ${dim}`} value={only.label}
+                       sub={`${money(only.net_ftp_profit)} · all of the book in scope`}
+                       tone="neutral" />
+                  <Row label="Yield" value={pct(only.yield_pct, 4)}
+                       sub={`${only.account_count.toLocaleString()} account-days`}
+                       tone="neutral" />
+                </div>
+              </Card>
+            );
+          }
+
           return (
             <Card key={dim} title={`Top ${dim}`} subtitle={`${v.count} in this slice`}
                   footnote={v.profit_yield_diverge
@@ -256,11 +278,13 @@ export default function Leaders() {
 
 function Row({ label, value, sub, tone }: {
   label: string; value: string; sub: string;
-  tone: "good" | "warning" | "critical";
+  tone: "good" | "warning" | "critical" | "neutral";
 }) {
   const color = { good: "var(--status-good)", warning: "var(--status-warning)",
-                  critical: "var(--status-critical)" }[tone];
-  const icon = { good: "▲", warning: "△", critical: "▼" }[tone];
+                  critical: "var(--status-critical)",
+                  neutral: "var(--text-muted)" }[tone];
+  const icon = { good: "▲", warning: "△", critical: "▼",
+                 neutral: "·" }[tone];
   return (
     <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 8,
                   alignItems: "start" }}>

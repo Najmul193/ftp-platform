@@ -1061,14 +1061,22 @@ class AnalyticsRepo:
 
             out[dim] = {
                 "count": len(rows),
+                #: False when there is only one member in scope. The maximum and
+                #: the minimum of a one-element set are the same element, so
+                #: calling it both the best and the worst performer is true
+                #: arithmetic and a meaningless statement. The caller shows the
+                #: single figure instead of a ranking.
+                "rankable": len(rows) > 1,
                 "top_by_profit": top,
                 "bottom_by_profit": decorate(by_profit[-1]),
                 "top_by_yield": decorate(by_yield[0]),
                 "bottom_by_yield": decorate(by_yield[-1]),
                 #: True when the profit leader is not the yield leader -- the
                 #: case worth flagging, because size is masking thin pricing.
+                #: Undefined with a single member, so it is forced false there.
                 "profit_yield_diverge": (
-                    by_profit[0].get(f"{dim}_key") != by_yield[0].get(f"{dim}_key")
+                    len(rows) > 1
+                    and by_profit[0].get(f"{dim}_key") != by_yield[0].get(f"{dim}_key")
                 ),
             }
         return out

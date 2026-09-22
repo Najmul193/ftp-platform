@@ -415,6 +415,8 @@ export interface Performer {
 }
 export interface DimPerformers {
   count: number;
+  /** False when only one member is in scope, so there is nothing to rank. */
+  rankable: boolean;
   top_by_profit: Performer & { share_pct: Num };
   bottom_by_profit: Performer;
   top_by_yield: Performer;
