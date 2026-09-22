@@ -78,6 +78,12 @@ same `SourceAdapter` boundary without touching validation, calculation or
 audit. A worksheet holds at most 1,048,576 rows, so past roughly 1M accounts a
 day Excel is not slow — it is impossible, which is why that boundary exists.
 
+The **business date is entered by the operator and required**. It is never
+taken from the sheet name: a tab called "5 Sep 26" is a label somebody typed,
+and trusting it silently books a day's figures against the wrong date with
+nothing to catch the mistake. The preview shows what the name suggests and
+offers it as one click; confirming it is the point.
+
 **Price.** Rates resolve from governed configuration, not from columns typed
 into the spreadsheet: a global default that each product may override per
 component. The workbook's own data validates the model — liquidity (0.30) and
@@ -129,6 +135,25 @@ rows that loaded stay put.
 Re-uploading identical content is rejected on a content hash. Re-uploading a
 date that already has data supersedes it, and nothing is ever deleted: the
 prior version stays queryable and the dashboards read only the current one.
+
+### Deleting a batch
+
+An HO administrator can remove a batch entirely — for a file loaded against
+the wrong date, say. It needs `UPLOAD_DELETE`, which `DATA_OPERATOR`
+deliberately does **not** carry: uploading data is routine, removing published
+figures is not.
+
+The confirmation is built from a dry run, so the decision is made with the
+row counts and the FTP profit at stake on screen. Deleting then puts back
+exactly the rows that batch displaced (tracked per row, because a merge
+retires only the account-days it carries), recalculates every affected date
+from what remains, and clears the aggregates for any date left empty.
+
+A reason is required. The batch row is genuinely removed; the audit record is
+not — it holds the full before-image, so what was deleted, by whom and when
+outlives the deletion. A batch that has itself been superseded cannot be
+deleted until the newer one is: removing a link from the middle of the chain
+would leave the rows it retired with nothing to fall back to.
 
 ---
 

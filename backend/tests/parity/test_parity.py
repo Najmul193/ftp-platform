@@ -44,12 +44,39 @@ FLOAT_DRIFT = Decimal("0.001")
 
 @pytest.fixture(scope="module")
 def calculated(workbook_path: Path, global_rates, product_rates, product_sides):
-    """Run the real adapter and the real engine over the real workbook."""
-    adapter = ExcelAdapter(LEGACY_WORKBOOK_MAPPING)
+    """Run the real adapter and the real engine over the real workbook.
+
+    Each sheet is loaded with its date supplied explicitly, because the adapter
+    no longer infers one from the sheet name -- a name is a label somebody
+    typed. The test parses the name itself to drive the loop, which is fine:
+    the guarantee being protected is that the *system* never guesses, not that
+    a test cannot read a filename.
+    """
+    from datetime import datetime
+    from openpyxl import load_workbook
+
+    wb = load_workbook(workbook_path, read_only=True, data_only=True, keep_vba=False)
+    sheet_dates = []
+    for name in wb.sheetnames:
+        try:
+            sheet_dates.append((name, datetime.strptime(name.strip(), "%d %b %y").date()))
+        except ValueError:
+            continue
+    wb.close()
+    assert len(sheet_dates) == EXPECTED_DATES, (
+        f"expected {EXPECTED_DATES} date-named sheets, found {len(sheet_dates)}"
+    )
+
     stats = ExtractStats()
     out = []
 
-    for row in adapter.extract(workbook_path, stats):
+    rows = []
+    for name, bdate in sheet_dates:
+        adapter = ExcelAdapter(LEGACY_WORKBOOK_MAPPING,
+                               business_date=bdate, sheet_name=name)
+        rows.extend(adapter.extract(workbook_path, stats))
+
+    for row in rows:
         side = Side.from_code(row.side)
         assert product_sides[row.product_code] is side, (
             f"row {row.extras['_origin']}: product {row.product_code!r} is "
