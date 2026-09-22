@@ -53,6 +53,26 @@ class Settings(BaseSettings):
         default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"]
     )
 
+    @field_validator("DATABASE_URL")
+    @classmethod
+    def _require_psycopg_driver(cls, v: str) -> str:
+        """Normalise the scheme to the driver that is actually installed.
+
+        Managed providers hand out `postgres://` or `postgresql://`. SQLAlchemy
+        maps both to psycopg2, which is not a dependency here -- the driver is
+        psycopg 3. Left alone that fails at first connection with a missing
+        module, which reads as a packaging fault rather than a URL that needs
+        one word changed. Rewriting it here means a pasted connection string
+        works as pasted.
+        """
+        for prefix in ("postgresql+psycopg://", "postgresql+psycopg_async://"):
+            if v.startswith(prefix):
+                return v
+        for prefix in ("postgresql://", "postgres://"):
+            if v.startswith(prefix):
+                return "postgresql+psycopg://" + v[len(prefix):]
+        return v
+
     @field_validator("SECRET_KEY")
     @classmethod
     def _reject_dev_secret_in_production(cls, v: str, info) -> str:

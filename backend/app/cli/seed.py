@@ -15,6 +15,7 @@ bank's real hierarchy before UAT.
 from __future__ import annotations
 
 import csv
+import os
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -37,8 +38,16 @@ EFFECTIVE_FROM = date(2026, 1, 1)
 #: Bootstrap credentials. The admin account is flagged `must_change_password`,
 #: so the first sign-in has to replace it. The demo accounts exist only to make
 #: scope enforcement visible and are not created when ENVIRONMENT=production.
-ADMIN_PASSWORD = "ChangeMe!2026"
+DEFAULT_ADMIN_PASSWORD = "ChangeMe!2026"
+ADMIN_PASSWORD = os.environ.get("FTP_ADMIN_PASSWORD") or DEFAULT_ADMIN_PASSWORD
 DEMO_PASSWORD = "Passw0rd!2026x"
+
+if settings.is_production and ADMIN_PASSWORD == DEFAULT_ADMIN_PASSWORD:
+    raise SystemExit(
+        "refusing to seed: set FTP_ADMIN_PASSWORD when ENVIRONMENT=production. "
+        "The bootstrap password is published in this file, so using it on a "
+        "reachable deployment is a live exposure, not a placeholder."
+    )
 
 #: The organisation hierarchy lives in editable CSVs rather than in code, so the
 #: bank can drop in its real divisions, districts and branches without a

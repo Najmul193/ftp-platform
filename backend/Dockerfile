@@ -41,9 +41,15 @@ COPY --chown=ftp:ftp app ./app
 COPY --chown=ftp:ftp data ./data
 
 USER ftp
+
+# 8000 locally; a managed host that assigns its own port injects PORT and the
+# command below follows it. Binding a hardcoded port there means the platform's
+# health check never connects and the deploy is rolled back with no error in
+# the application log.
+ENV PORT=8000
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD curl -fsS http://127.0.0.1:8000/health || exit 1
+  CMD curl -fsS "http://127.0.0.1:${PORT:-8000}/health" || exit 1
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
