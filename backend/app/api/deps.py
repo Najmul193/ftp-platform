@@ -15,6 +15,7 @@ from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.db import get_db
 from app.core.permissions import permissions_for_roles
 from app.core.security import decode_token
@@ -90,12 +91,15 @@ def get_active_user(
 ) -> CurrentUser:
     """A caller who has completed account setup.
 
-    The forced password change is enforced here, not only in the UI. Gating it
-    client-side alone would leave the API serving a user still on the seeded
-    password to anyone holding a token -- which is exactly the situation the
-    flag exists to prevent.
+    When `ENFORCE_PASSWORD_CHANGE` is on, this is where the forced change is
+    applied -- not in the UI. Gating client-side alone would leave the API
+    serving a user still on the seeded password to anyone holding a token,
+    which is exactly what the flag exists to prevent. The switch is off by
+    default so it stays out of the way during development.
     """
     user = get_current_user(db, authorization)
+    if not settings.ENFORCE_PASSWORD_CHANGE:
+        return user
     row = db.get(User, user.id)
     if row is not None and row.must_change_password:
         raise HTTPException(

@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "dev-only-insecure-key-change-me"
     ACCESS_TOKEN_MINUTES: int = 15
     REFRESH_TOKEN_HOURS: int = 8
+    #: Gate the application until a seeded password is replaced. Off while the
+    #: platform is in development so it does not sit in the way; turn it on for
+    #: any real deployment, where a shared initial password is a live exposure.
+    ENFORCE_PASSWORD_CHANGE: bool = False
     MAX_FAILED_LOGINS: int = 5
     LOCKOUT_MINUTES: int = 15
     PASSWORD_MIN_LENGTH: int = 12

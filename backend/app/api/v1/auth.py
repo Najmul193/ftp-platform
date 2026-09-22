@@ -91,7 +91,11 @@ def me(user: UserDep, db: DbDep) -> MeResponse:
         id=user.id, username=user.username, full_name=user.full_name,
         scope_level=user.scope_level, scope_id=user.scope_id, scope_label=label,
         roles=sorted(user.roles), permissions=sorted(user.permissions),
-        must_change_password=bool(row and row.must_change_password),
+        # Reported only when it is enforced: the client should not gate on a
+        # rule the server is not applying.
+        must_change_password=bool(
+            settings.ENFORCE_PASSWORD_CHANGE and row and row.must_change_password
+        ),
     )
 
 

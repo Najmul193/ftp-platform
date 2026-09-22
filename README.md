@@ -40,10 +40,14 @@ username:  admin
 password:  ChangeMe!2026
 ```
 
-**This password must be changed on first sign-in.** The account is flagged
-`must_change_password`, and the application gates on it — a seeded password is
-a shared secret until it is replaced, so nothing else is reachable until you
-set a new one. Minimum 12 characters.
+Change it. A seeded password is a shared secret until it is replaced.
+
+Enforcement is available but **off by default**, so it stays out of the way
+during development. Set `ENFORCE_PASSWORD_CHANGE=true` and an account still on
+its initial password is gated — in the API, not only in the UI, since gating
+client-side alone would leave the endpoints open to anyone holding a token.
+`/auth/*` stays reachable so the change itself can be made. Minimum 12
+characters.
 
 `admin` holds `ADMIN`, `FTP_MANAGER`, `DATA_OPERATOR` and `ANALYST`: it can
 upload data, maintain branches and products, manage users and read everything.
@@ -185,7 +189,8 @@ read time, because an average of averages is not the average.
 ## Configuration
 
 Credentials live in `backend/app/cli/seed.py` (`ADMIN_PASSWORD`,
-`DEMO_PASSWORD`). Branch hierarchy is an editable CSV, not code:
+`DEMO_PASSWORD`). Turn on `ENFORCE_PASSWORD_CHANGE` before any real
+deployment. Branch hierarchy is an editable CSV, not code:
 
 ```
 backend/data/branch_mapping.csv
