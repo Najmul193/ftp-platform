@@ -1,6 +1,11 @@
 /** Typed client for the FTP API. */
 
-const BASE = "/api/v1";
+/** Same-origin by default; an absolute URL when the API is on another host.
+ *
+ *  Same-origin is the better arrangement -- no preflight, no CORS to keep in
+ *  step -- but it needs a proxy in front, which not every host provides. The
+ *  override exists so the client does not depend on one. */
+const BASE = import.meta.env.VITE_API_BASE?.replace(/\/$/, "") || "/api/v1";
 
 let token: string | null = localStorage.getItem("ftp_token");
 
