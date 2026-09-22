@@ -1,0 +1,11 @@
+# The eight divisions of Bangladesh, per the national administrative structure.
+# Edit this file and re-run:  python -m app.cli.seed
+division_code,division_name
+DK,Dhaka
+CT,Chattogram
+RJ,Rajshahi
+RP,Rangpur
+KH,Khulna
+BR,Barishal
+SY,Sylhet
+MY,Mymensingh

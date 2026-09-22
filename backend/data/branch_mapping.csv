@@ -1,16 +1,13 @@
-# PLACEHOLDER BRANCH MAPPING -- replace with the bank's real data (plan open items Q1/Q2).
+# BRANCH MAPPING -- the 3 branch codes carried by the bank's own FTP workbook
+# (1-3), named for the Bangladeshi divisions/districts they stand in.
 #
-# FTP1.xlsm carries branch CODES only (101-105) and no names, hierarchy or
-# categories, so everything except branch_code below is invented.
-#
-# Edit this file and re-run:  python -m app.cli.seed
+# The bank feed carries branch CODE only, with no names. Edit this file and
+# re-run:  python -m app.cli.seed
 # Or maintain branches through the HO admin screens once the API is running.
 #
 # category must be one of: METRO, URBAN, SEMI_URBAN, RURAL
-# division_code / district_code must exist in the division and district files.
-branch_code,branch_name,division_code,division_name,district_code,district_name,category,opened_on
-101,Jaipur Main Branch,DIV-N,Northern Division,DST-JAI,Jaipur,METRO,2005-04-01
-102,Jaipur City Branch,DIV-N,Northern Division,DST-JAI,Jaipur,URBAN,2008-07-15
-103,Jodhpur Central Branch,DIV-N,Northern Division,DST-JOD,Jodhpur,SEMI_URBAN,2011-01-20
-104,Udaipur Rural Branch,DIV-S,Southern Division,DST-UDA,Udaipur,RURAL,2014-09-10
-105,Udaipur Town Branch,DIV-S,Southern Division,DST-UDA,Udaipur,URBAN,2016-03-05
+# division_code must exist in divisions.csv; district_code in districts.csv.
+branch_code,branch_name,division_code,district_code,category,opened_on
+1,Dhaka Main Branch,DK,DHK,METRO,2005-04-01
+2,Chattogram Main Branch,CT,CTG,URBAN,2008-07-15
+3,Rajshahi Central Branch,RJ,RAJ,SEMI_URBAN,2011-01-20

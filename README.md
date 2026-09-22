@@ -61,9 +61,9 @@ different slice, because scope is applied server-side on every query:
 | Username | Scope | Role | Sees (with the sample data loaded) |
 |---|---|---|---|
 | `operator` | Head Office | `DATA_OPERATOR` | Everything; can upload but not maintain masters |
-| `division_user` | Northern Division | `ANALYST` | 3 branches, 440 account-days |
-| `district_user` | Jaipur district | `ANALYST` | 2 branches, 426 account-days |
-| `branch_user` | Branch 1 | `VIEWER` | 1 branch, 188 account-days |
+| `division_user` | Barishal Division | `ANALYST` | Branches across Barishal Division |
+| `district_user` | Dhaka district | `ANALYST` | Branches in Dhaka district only |
+| `branch_user` | Branch 1 | `VIEWER` | Branch 1 (Dhaka Main Branch) only |
 
 A branch user asking for another branch gets **403**, not an empty result — an
 empty result would confirm the filter was valid and let them map the hierarchy

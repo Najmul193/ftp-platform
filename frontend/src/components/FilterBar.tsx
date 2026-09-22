@@ -4,7 +4,7 @@ import { MiniButton, Pill } from "./ui";
 /** ONE filter row above everything it scopes. Never per-chart filters, and
  *  never a filter inside a chart card -- every chart on the page re-renders
  *  against the same slice. */
-export default function FilterBar() {
+export default function FilterBar({ collapsed = false }: { collapsed?: boolean }) {
   const { filters, setFilters, resetFilters, branches, products, divisions, districts, me } = useApp();
 
   const field: React.CSSProperties = {
@@ -48,6 +48,30 @@ export default function FilterBar() {
   if (filters.ftp_sign)
     chips.push({ k: "sign", text: `${filters.ftp_sign} FTP`,
                  clear: () => setFilters((f) => ({ ...f, ftp_sign: undefined })) });
+
+  if (collapsed) {
+    return (
+      <div style={{ display: "flex", gap: 4, alignItems: "center", minWidth: 0,
+                    overflow: "hidden" }}>
+        {chips.length === 0 ? (
+          <span style={{ fontSize: 11.5, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+            No filters
+          </span>
+        ) : (
+          chips.slice(0, 5).map((c) => (
+            <button key={c.k} onClick={c.clear} title="Remove this filter" style={{
+              display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0,
+              background: "var(--surface-1)", border: "1px solid var(--border-strong)",
+              borderRadius: 999, padding: "1px 6px 1px 9px", fontSize: 11,
+              color: "var(--text-secondary)", cursor: "pointer", whiteSpace: "nowrap",
+            }}>
+              {c.text}<span aria-hidden style={{ fontSize: 12.5, lineHeight: 1 }}>×</span>
+            </button>
+          ))
+        )}
+      </div>
+    );
+  }
 
   return (
     <div style={{

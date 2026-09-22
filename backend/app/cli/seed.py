@@ -4,13 +4,12 @@ Idempotent: safe to re-run. Run with
 
     python -m app.cli.seed
 
-PLACEHOLDERS -- these are open items Q1/Q2 in the plan and must be replaced with
-the bank's real values before UAT:
-
-* Division and district names/codes are invented. The workbook carries no
-  organisation data, only branch codes 101-105.
-* Branch categories are spread across all four values so that category analysis
-  is exercised end to end. The real mapping is unknown.
+The organisation seeded here follows the national structure of Bangladesh:
+8 divisions and 64 districts. The workbook itself carries no organisation data,
+only branch codes 1-3 (the bank's own), which are mapped to representative
+Bangladeshi branches; branch categories are spread across all three values so
+that category analysis is exercised end to end. Swap branch_mapping.csv for the
+bank's real hierarchy before UAT.
 """
 
 from __future__ import annotations
@@ -41,15 +40,19 @@ EFFECTIVE_FROM = date(2026, 1, 1)
 ADMIN_PASSWORD = "ChangeMe!2026"
 DEMO_PASSWORD = "Passw0rd!2026x"
 
-#: The branch mapping lives in an editable CSV rather than in code, so the bank
-#: can drop in its real hierarchy without a deployment. Comment lines start "#".
-BRANCH_MAPPING_CSV = Path(__file__).resolve().parents[2] / "data" / "branch_mapping.csv"
+#: The organisation hierarchy lives in editable CSVs rather than in code, so the
+#: bank can drop in its real divisions, districts and branches without a
+#: deployment. Comment lines start "#".
+DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+DIVISIONS_CSV = DATA_DIR / "divisions.csv"
+DISTRICTS_CSV = DATA_DIR / "districts.csv"
+BRANCH_MAPPING_CSV = DATA_DIR / "branch_mapping.csv"
 
 
-def load_branch_mapping(path: Path = BRANCH_MAPPING_CSV) -> list[dict[str, str]]:
-    """Read the mapping, skipping comment lines."""
+def load_csv(path: Path) -> list[dict[str, str]]:
+    """Read a seed CSV, skipping comment lines."""
     if not path.exists():
-        raise FileNotFoundError(f"branch mapping not found at {path}")
+        raise FileNotFoundError(f"seed data not found at {path}")
     with path.open() as f:
         lines = [ln for ln in f if not ln.lstrip().startswith("#")]
     return list(csv.DictReader(lines))
@@ -104,30 +107,26 @@ def seed() -> None:
                 if pid not in existing:
                     s.add(RolePermission(role_id=role.id, permission_id=pid))
 
-        # --- organisation, driven by the editable CSV --------------------- #
-        mapping = load_branch_mapping()
-
+        # --- organisation, driven by the editable CSVs --------------------- #
         divs: dict[str, Division] = {}
         dists: dict[str, District] = {}
 
-        for row in mapping:
+        for row in load_csv(DIVISIONS_CSV):
             dv = row["division_code"].strip()
-            if dv not in divs:
-                divs[dv], _ = _get_or_create(
-                    s, Division, {"name": row["division_name"].strip()}, code=dv
-                )
+            divs[dv], _ = _get_or_create(
+                s, Division, {"name": row["division_name"].strip()}, code=dv
+            )
 
-        for row in mapping:
+        for row in load_csv(DISTRICTS_CSV):
             dt = row["district_code"].strip()
-            if dt not in dists:
-                dists[dt], _ = _get_or_create(
-                    s, District,
-                    {"name": row["district_name"].strip(),
-                     "division_id": divs[row["division_code"].strip()].id},
-                    code=dt,
-                )
+            dists[dt], _ = _get_or_create(
+                s, District,
+                {"name": row["district_name"].strip(),
+                 "division_id": divs[row["division_code"].strip()].id},
+                code=dt,
+            )
 
-        for row in mapping:
+        for row in load_csv(BRANCH_MAPPING_CSV):
             opened = row.get("opened_on", "").strip()
             _get_or_create(
                 s, Branch,
@@ -244,8 +243,8 @@ def seed() -> None:
             first_branch = s.scalar(
                 select(Branch).order_by(Branch.branch_code).limit(1)
             )
-            first_district = s.scalar(
-                select(District).order_by(District.code).limit(1)
+            first_district = (
+                s.get(District, first_branch.district_id) if first_branch else None
             )
             first_division = s.scalar(
                 select(Division).order_by(Division.code).limit(1)

@@ -37,8 +37,17 @@ export default function App() {
 }
 
 function Shell() {
-  const { me, ready, logout, can, theme, toggleTheme, dataInfo, lastSync, refreshData } = useApp();
+  const { me, ready, logout, can, theme, toggleTheme, dataInfo, lastSync, refreshData, filters } = useApp();
   const [view, setView] = useState(currentView());
+  const [navOpen, setNavOpen] = useState(
+    () => (localStorage.getItem("ftp_nav_open") ?? "1") === "1",
+  );
+  const [filtersOpen, setFiltersOpen] = useState(
+    () => (localStorage.getItem("ftp_filters_open") ?? "1") === "1",
+  );
+
+  useEffect(() => { localStorage.setItem("ftp_nav_open", navOpen ? "1" : "0"); }, [navOpen]);
+  useEffect(() => { localStorage.setItem("ftp_filters_open", filtersOpen ? "1" : "0"); }, [filtersOpen]);
 
   useEffect(() => {
     const onHash = () => setView(currentView());
@@ -60,69 +69,123 @@ function Shell() {
                     leaders: Leaders, accounts: Accounts, upload: Upload,
                     admin: Admin }[view] ?? Daily;
 
+  const activeFilterCount = (Object.entries(filters) as [string, unknown][]).reduce(
+    (n, [, v]) => n + (Array.isArray(v) ? v.length : v ? 1 : 0), 0,
+  );
+
   return (
     <div style={{ display: "flex", minHeight: "100%", background: "var(--page)" }}>
-      <aside style={{
-        width: 196, flexShrink: 0, background: "var(--surface-1)",
-        borderRight: "1px solid var(--border)", display: "flex",
-        flexDirection: "column", position: "sticky", top: 0, height: "100vh",
-        paddingTop: "env(safe-area-inset-top, 0px)",
-      }}>
-        <div style={{ padding: "16px 16px 12px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-            <span aria-hidden style={{
-              width: 28, height: 28, borderRadius: 7, background: "var(--series-1)",
-              color: "#fff", display: "grid", placeItems: "center",
-              fontSize: 11, fontWeight: 700, letterSpacing: ".02em",
-            }}>FTP</span>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 650 }}>Profitability</div>
-              <div style={{ fontSize: 10.5, color: "var(--text-muted)" }}>
-                Funds Transfer Pricing
+      {navOpen && (
+        <aside style={{
+          width: 196, flexShrink: 0, background: "var(--surface-1)",
+          borderRight: "1px solid var(--border)", display: "flex",
+          flexDirection: "column", position: "sticky", top: 0, height: "100vh",
+          paddingTop: "env(safe-area-inset-top, 0px)",
+        }}>
+          <div style={{ padding: "16px 16px 12px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+              <span aria-hidden style={{
+                width: 28, height: 28, borderRadius: 7, background: "var(--series-1)",
+                color: "#fff", display: "grid", placeItems: "center",
+                fontSize: 11, fontWeight: 700, letterSpacing: ".02em",
+              }}>FTP</span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 650 }}>Profitability</div>
+                <div style={{ fontSize: 10.5, color: "var(--text-muted)" }}>
+                  Funds Transfer Pricing
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <nav style={{ flex: 1, padding: "0 8px", overflowY: "auto" }}>
-          {["Analyse", "Operate"].map((group) => {
-            const items = visible.filter((n) => n.group === group);
-            if (!items.length) return null;
-            return (
-              <div key={group} style={{ marginBottom: 14 }}>
-                <div style={{
-                  fontSize: 10, fontWeight: 600, letterSpacing: ".08em",
-                  textTransform: "uppercase", color: "var(--text-muted)",
-                  padding: "0 8px 6px",
-                }}>{group}</div>
-                {items.map((n) => (
-                  <a key={n.id} href={`#/${n.id}`} style={{
-                    display: "block", padding: "7px 10px", borderRadius: 7,
-                    fontSize: 13, textDecoration: "none", marginBottom: 1,
-                    background: view === n.id ? "var(--surface-2)" : "transparent",
-                    color: view === n.id ? "var(--text-primary)" : "var(--text-secondary)",
-                    fontWeight: view === n.id ? 600 : 450,
-                  }}>{n.label}</a>
-                ))}
-              </div>
-            );
-          })}
-        </nav>
+          <nav style={{ flex: 1, padding: "0 8px", overflowY: "auto" }}>
+            {["Analyse", "Operate"].map((group) => {
+              const items = visible.filter((n) => n.group === group);
+              if (!items.length) return null;
+              return (
+                <div key={group} style={{ marginBottom: 14 }}>
+                  <div style={{
+                    fontSize: 10, fontWeight: 600, letterSpacing: ".08em",
+                    textTransform: "uppercase", color: "var(--text-muted)",
+                    padding: "0 8px 6px",
+                  }}>{group}</div>
+                  {items.map((n) => (
+                    <a key={n.id} href={`#/${n.id}`} style={{
+                      display: "block", padding: "7px 10px", borderRadius: 7,
+                      fontSize: 13, textDecoration: "none", marginBottom: 1,
+                      background: view === n.id ? "var(--surface-2)" : "transparent",
+                      color: view === n.id ? "var(--text-primary)" : "var(--text-secondary)",
+                      fontWeight: view === n.id ? 600 : 450,
+                    }}>{n.label}</a>
+                  ))}
+                </div>
+              );
+            })}
+          </nav>
 
-        <div style={{ padding: 12, borderTop: "1px solid var(--border)", fontSize: 11.5 }}>
-          <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>{me.full_name}</div>
-          <div style={{ color: "var(--text-muted)", marginBottom: 8 }}>{me.scope_label}</div>
-          <div style={{ display: "flex", gap: 6 }}>
-            <button onClick={toggleTheme} title="Switch theme" style={btn}>
-              {theme === "dark" ? "Light" : "Dark"}
-            </button>
-            <button onClick={logout} style={btn}>Sign out</button>
+          <div style={{ padding: 12, borderTop: "1px solid var(--border)", fontSize: 11.5 }}>
+            <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>{me.full_name}</div>
+            <div style={{ color: "var(--text-muted)", marginBottom: 8 }}>{me.scope_label}</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button onClick={toggleTheme} title="Switch theme" style={btn}>
+                {theme === "dark" ? "Light" : "Dark"}
+              </button>
+              <button onClick={logout} style={btn}>Sign out</button>
+            </div>
           </div>
-        </div>
-      </aside>
+        </aside>
+      )}
 
       <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
-        <FilterBar />
+        <div style={{
+          position: "sticky", top: "env(safe-area-inset-top, 0px)", zIndex: 30,
+          display: "flex", flexDirection: "column",
+          background: "var(--surface-2)", borderBottom: "1px solid var(--border)",
+        }}>
+          <div style={{
+            display: "flex", alignItems: "center", gap: 8, padding: "6px 12px",
+            minHeight: 40,
+          }}>
+            <button onClick={() => setNavOpen((v) => !v)} title="Toggle navigation" style={{
+              ...btn, padding: "4px 8px", fontSize: 15, lineHeight: 1,
+            }} aria-label="Show or hide navigation">
+              <span aria-hidden>☰</span>
+            </button>
+
+            {!navOpen && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                <span aria-hidden style={{
+                  width: 22, height: 22, borderRadius: 6, background: "var(--series-1)",
+                  color: "#fff", display: "grid", placeItems: "center",
+                  fontSize: 9, fontWeight: 700, letterSpacing: ".02em",
+                }}>FTP</span>
+                <span style={{ fontSize: 12, fontWeight: 600,
+                               color: "var(--text-primary)", whiteSpace: "nowrap" }}>
+                  Profitability
+                </span>
+              </div>
+            )}
+
+            <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center" }}>
+              {!filtersOpen && <FilterBar collapsed />}
+            </div>
+
+            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+              {activeFilterCount > 0 && (
+                <span style={{
+                  fontSize: 10.5, fontWeight: 600, color: "var(--series-1)",
+                }}>{activeFilterCount} filter{activeFilterCount === 1 ? "" : "s"}</span>
+              )}
+              <button onClick={() => setFiltersOpen((v) => !v)} title="Show or hide global filters"
+                      style={{ ...btn, fontWeight: filtersOpen ? 600 : 500 }}
+                      aria-expanded={filtersOpen}>
+                <span aria-hidden>{filtersOpen ? "◦" : "◦"}</span> Filters
+              </button>
+            </div>
+          </div>
+
+          {filtersOpen && <FilterBar />}
+        </div>
 
         <div style={{
           display: "flex", alignItems: "center", gap: 10, padding: "8px 20px 0",

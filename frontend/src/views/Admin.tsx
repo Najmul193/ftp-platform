@@ -286,7 +286,7 @@ function BranchForm({
         <div>
           <label style={label} htmlFor="b-name">Branch name</label>
           <input id="b-name" style={field} value={name}
-                 onChange={(e) => setName(e.target.value)} placeholder="Jaipur VDN" />
+                 onChange={(e) => setName(e.target.value)} placeholder="Dhaka Main Branch" />
         </div>
         <div>
           <label style={label} htmlFor="b-dist">District</label>
