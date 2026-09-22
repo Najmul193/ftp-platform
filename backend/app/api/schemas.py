@@ -144,6 +144,8 @@ class KpiResponse(BaseModel):
 class SeriesPoint(BaseModel):
     label: str
     key: str | int | None = None
+    #: The level above this one -- a district's division, a branch's district.
+    parent_label: str | None = None
     asset_ftp_profit: Decimal = Decimal(0)
     liability_ftp_profit: Decimal = Decimal(0)
     net_ftp_profit: Decimal = Decimal(0)

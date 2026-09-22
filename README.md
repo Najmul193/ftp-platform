@@ -109,6 +109,18 @@ product leads in which area, and the banker's daily set — yield on advances,
 cost of deposits, NIM, CASA, credit-deposit ratio, MTD/QTD/YTD, a watchlist
 ordered by money at stake, and a quantified repricing opportunity.
 
+**Summarise.** The bottom of the Basic overview rebuilds the workbook's three
+summary sheets — Branch, Product and Daily profit — from the calculated
+results, scoped by the same filters as everything else.
+
+Branch profit rolls up through **division → district → branch** and opens at
+division, because eight rows fit on screen and a few hundred do not. At every
+level the chart draws the top twelve and the table carries the whole list,
+searchable and paginated. The tail is stated in words beneath the chart
+("the other 98 branches total …, 83.6% of the book") rather than drawn as an
+"Other" bar: with 98 of 110 branches in it, that bar is larger than every
+individual one combined and flattens the twelve the chart exists to compare.
+
 **Govern.** Every change is audited in three independent layers: semantic
 records written in the same transaction as the change, database triggers that
 fire however the change arrived, and a hash chain that makes tampering

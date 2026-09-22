@@ -198,7 +198,26 @@ class DashboardRepo:
 
     # ------------------------------------------------------------------ #
 
-    def _breakdown(self, f: Filters, model: Any, keys: Sequence, labels) -> list[dict]:
+    def _names(self) -> dict[str, dict[int, str]]:
+        """Readable names for the id-keyed levels, fetched once per call.
+
+        At 8 divisions and 64 districts these are small enough to resolve in
+        one pass rather than joining them onto an aggregate query.
+        """
+        from app.models import Branch, District, Division
+        divisions = {d.id: d.name for d in self.s.scalars(select(Division))}
+        districts = {d.id: d.name for d in self.s.scalars(select(District))}
+        parent = {d.id: divisions.get(d.division_id, "")
+                  for d in self.s.scalars(select(District))}
+        branch_parent = {
+            b.branch_code: (districts.get(b.district_id, ""), b.branch_name)
+            for b in self.s.scalars(select(Branch))
+        }
+        return {"division": divisions, "district": districts,
+                "district_parent": parent, "branch": branch_parent}
+
+    def _breakdown(self, f: Filters, model: Any, keys: Sequence, labels,
+                   parents=None) -> list[dict]:
         stmt = _apply_filters(
             _apply_scope(select(*keys, *_sums(model)), model, self._scope_for(f)), model, f
         )
@@ -209,6 +228,10 @@ class DashboardRepo:
             out.append({
                 "key": r[0],
                 "label": labels(r),
+                # Which division a district sits in, or which district a branch
+                # does. At 64 districts a bare name is ambiguous; the parent is
+                # what makes a row identifiable in a long list.
+                "parent_label": parents(r) if parents else None,
                 "asset_ftp_profit": r.asset_ftp_profit or ZERO,
                 "liability_ftp_profit": r.liability_ftp_profit or ZERO,
                 "net_ftp_profit": r.net_ftp_profit or ZERO,
@@ -226,7 +249,31 @@ class DashboardRepo:
 
     def by_branch(self, f: Filters) -> list[dict]:
         m = _grain(f)
-        return self._breakdown(f, m, [m.branch_id, m.branch_code], lambda r: r[1])
+        names = self._names()["branch"]
+        return self._breakdown(
+            f, m, [m.branch_id, m.branch_code],
+            lambda r: f"{r[1]} {names.get(r[1], ('', ''))[1]}".strip(),
+            lambda r: names.get(r[1], ("", ""))[0] or None,
+        )
+
+    def by_division(self, f: Filters) -> list[dict]:
+        """The coarsest rollup -- around eight rows, so it charts directly."""
+        m = _grain(f)
+        names = self._names()["division"]
+        return self._breakdown(
+            f, m, [m.division_id],
+            lambda r: names.get(r[0], f"Division {r[0]}"),
+        )
+
+    def by_district(self, f: Filters) -> list[dict]:
+        """Around sixty rows: readable as a ranked table, not as a bar chart."""
+        m = _grain(f)
+        n = self._names()
+        return self._breakdown(
+            f, m, [m.district_id],
+            lambda r: n["district"].get(r[0], f"District {r[0]}"),
+            lambda r: n["district_parent"].get(r[0]) or None,
+        )
 
     def by_product(self, f: Filters) -> list[dict]:
         m = AggDailyBranchProduct

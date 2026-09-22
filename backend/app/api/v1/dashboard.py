@@ -70,6 +70,18 @@ def by_product(db: DbDep, scope: ScopeDep, f: FiltersDep):
     return DashboardRepo(db, scope).by_product(f)
 
 
+@router.get("/by-division", response_model=list[SeriesPoint], dependencies=[_view])
+def by_division(db: DbDep, scope: ScopeDep, f: FiltersDep):
+    """Division rollup. Few enough rows to chart directly."""
+    return DashboardRepo(db, scope).by_division(f)
+
+
+@router.get("/by-district", response_model=list[SeriesPoint], dependencies=[_view])
+def by_district(db: DbDep, scope: ScopeDep, f: FiltersDep):
+    """District rollup, each row carrying its division."""
+    return DashboardRepo(db, scope).by_district(f)
+
+
 @router.get("/by-category", response_model=list[SeriesPoint], dependencies=[_view])
 def by_category(db: DbDep, scope: ScopeDep, f: FiltersDep):
     return DashboardRepo(db, scope).by_category(f)

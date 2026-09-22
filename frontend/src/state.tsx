@@ -93,6 +93,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("ftp_theme", theme);
   }, [theme]);
 
+  // Re-read the filters whenever the hash changes, not only at mount.
+  // Without this, back/forward and a link pasted into an already-open tab
+  // change the view but silently keep the old filters -- the page then shows
+  // one thing and claims another.
+  useEffect(() => {
+    const onHash = () => setFiltersRaw(readFilters());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
   const refreshMasters = useCallback(async () => {
     const [b, p, dv, ds] = await Promise.all([
       api.branches(true).catch(() => []),

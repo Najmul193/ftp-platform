@@ -1,18 +1,28 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { api } from "../api";
 import Chart, { axisCommon, baseOption, useTokens } from "../components/Chart";
 import { Card, Empty, Grid, Stat } from "../components/ui";
 import { compact, money, n, pct, shortDate } from "../format";
+import ProfitSummary from "../components/ProfitSummary";
+import { longDate } from "../format";
 import { useApp, useAsync } from "../state";
+
+type Level = "division" | "district" | "branch";
 
 export default function BasicOverview() {
   const { filters } = useApp();
   const t = useTokens();
+  // Start at the coarsest level: with eight divisions the whole book fits on
+  // screen at once, and drilling down is a click. Starting at branch level
+  // would open on a few hundred rows nobody asked for.
+  const [level, setLevel] = useState<Level>("division");
 
   const k = useAsync(() => api.kpis(filters), [filters]);
   const branches = useAsync(() => api.byBranch(filters), [filters]);
   const products = useAsync(() => api.byProduct(filters), [filters]);
   const trend = useAsync(() => api.trend(filters), [filters]);
+  const divisions = useAsync(() => api.byDivision(filters), [filters]);
+  const districts = useAsync(() => api.byDistrict(filters), [filters]);
 
   const kpis = k.data;
   const branchRows = (branches.data ?? []).slice().sort(
@@ -20,6 +30,31 @@ export default function BasicOverview() {
   const productRows = (products.data ?? []).slice().sort(
     (a, b) => n(b.net_ftp_profit) - n(a.net_ftp_profit));
   const points = trend.data?.points ?? [];
+
+  const levelRows = level === "division" ? (divisions.data ?? [])
+                  : level === "district" ? (districts.data ?? [])
+                  : (branches.data ?? []);
+  const levelLoading = level === "division" ? divisions.loading
+                     : level === "district" ? districts.loading
+                     : branches.loading;
+  const levelSubtitle: Record<Level, string> = {
+    division: "Net FTP profit by division",
+    district: "Net FTP profit by district, each within its division",
+    branch: "Net FTP profit by branch, each within its district",
+  };
+
+  // The daily series in the shape the summary component expects. A day has no
+  // meaningful asset/liability stack to draw, so that split is turned off.
+  const dailyRows = points.map((p) => ({
+    key: p.key, label: longDate(p.key as string),
+    parent_label: null,
+    asset_ftp_profit: p.asset_ftp_profit,
+    liability_ftp_profit: p.liability_ftp_profit,
+    net_ftp_profit: p.net_ftp_profit,
+    asset_balance: p.asset_balance, liability_balance: p.liability_balance,
+    total_balance: p.total_balance, account_count: p.account_count,
+    negative_ftp_count: p.negative_ftp_count, avg_ftp_rate: p.avg_ftp_rate,
+  }));
 
   // ---- grouped bar: asset vs liability vs net ftp by branch ---------------
   const branchOption = useMemo(() => {
@@ -240,6 +275,62 @@ export default function BasicOverview() {
                      ariaLabel="Net FTP profit by product" />}
         </Card>
       </Grid>
+
+      {/* ---- the workbook's three summary sheets ------------------------ */}
+      <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16,
+                    marginTop: 2 }}>
+        <h2 style={{ margin: "0 0 2px", fontSize: 15, fontWeight: 650 }}>
+          Profit summaries
+        </h2>
+        <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-muted)" }}>
+          The workbook's Branch, Product and Daily profit sheets, rebuilt from
+          the calculated results and scoped by the filters above.
+        </p>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <ProfitSummary
+            title="Branch profit"
+            subtitle={levelSubtitle[level]}
+            rows={levelRows}
+            loading={levelLoading}
+            unitLabel={level}
+            csvName={`ftp-${level}-profit.csv`}
+            levels={[
+              { id: "division", label: "Division" },
+              { id: "district", label: "District" },
+              { id: "branch", label: "Branch" },
+            ]}
+            level={level}
+            onLevel={(id) => setLevel(id as Level)}
+            footnote="Roll up to division to see the whole book at a glance, or drill to branch for the detail. Each level is ranked on net FTP profit; the share column is of the total in scope."
+          />
+
+          <Grid cols="minmax(0, 1fr) minmax(0, 1fr)">
+            <ProfitSummary
+              title="Product profit"
+              subtitle="Net FTP profit by product"
+              rows={products.data ?? []}
+              loading={products.loading}
+              unitLabel="product"
+              csvName="ftp-product-profit.csv"
+              footnote="A product's FTP profit is the spread it earns over its own benchmark, after liquidity and other costs."
+            />
+
+            <ProfitSummary
+              title="Daily profit"
+              subtitle={points.length
+                ? `${longDate(points[0].key as string)} to ${longDate(points[points.length - 1].key as string)}`
+                : undefined}
+              rows={dailyRows}
+              loading={trend.loading}
+              unitLabel="day"
+              csvName="ftp-daily-profit.csv"
+              showSides={false}
+              footnote="Ranked by profit rather than by date, so the strongest and weakest days are the ones you see first. Sort by name for chronological order."
+            />
+          </Grid>
+        </div>
+      </div>
     </div>
   );
 }

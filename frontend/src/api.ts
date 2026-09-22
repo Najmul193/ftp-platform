@@ -96,6 +96,8 @@ export const api = {
   byBranch: (f: Filters) => request<Series[]>(`/dashboard/by-branch${qs(f)}`),
   byProduct: (f: Filters) => request<Series[]>(`/dashboard/by-product${qs(f)}`),
   byCategory: (f: Filters) => request<Series[]>(`/dashboard/by-category${qs(f)}`),
+  byDivision: (f: Filters) => request<Series[]>(`/dashboard/by-division${qs(f)}`),
+  byDistrict: (f: Filters) => request<Series[]>(`/dashboard/by-district${qs(f)}`),
   heatmap: (f: Filters) => request<HeatCell[]>(`/dashboard/heatmap${qs(f)}`),
   accounts: (f: Filters, o: Record<string, unknown>) =>
     request<PageOf<AccountRow>>(`/dashboard/accounts${qs(f, o)}`),
@@ -226,6 +228,8 @@ export interface Summary extends Kpis {
 
 export interface Series {
   key: string | number; label: string;
+  /** The level above: a district's division, a branch's district. */
+  parent_label?: string | null;
   asset_ftp_profit: Num; liability_ftp_profit: Num; net_ftp_profit: Num;
   asset_balance: Num; liability_balance: Num; total_balance: Num;
   account_count: number; negative_ftp_count: number; avg_ftp_rate: Num;
