@@ -8,6 +8,7 @@ from typing import Literal
 from pathlib import Path
 
 from fastapi import (
+    BackgroundTasks,
     APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile,
     status,
 )
@@ -21,6 +22,7 @@ from app.ingestion.mapping import LEGACY_WORKBOOK_MAPPING
 from app.models import UploadBatch, UploadException
 from app.services.pipeline import PipelineError, UploadMode, UploadPipeline
 from app.services.batch_delete import BatchDeleteError, BatchDeleteService
+from app.services.cache_warm import spawn_warm_cache
 from app.services.rejects import build_rejects_workbook
 
 router = APIRouter(prefix="/uploads", tags=["uploads"])
@@ -97,6 +99,7 @@ def probe(file: UploadFile = File(...)):
 def upload(
     db: DbDep,
     user: UserDep,
+    background: BackgroundTasks,
     file: UploadFile = File(...),
     business_date: date = Form(..., description="Entered by the operator; required"),
     sheet_name: str | None = Form(None),
@@ -130,6 +133,11 @@ def upload(
         )
     except PipelineError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+
+    if result.status == "COMPLETED":
+        # Every stored dashboard result now belongs to the old data; rebuild the
+        # common ones before anyone opens a page.
+        background.add_task(spawn_warm_cache, result.batch_ref, "present")
 
     return UploadResult(
         batch_ref=result.batch_ref, status=result.status,
@@ -241,7 +249,7 @@ def deletion_impact(batch_ref: str, db: DbDep, user: UserDep):
 
 @router.delete("/{batch_ref}", dependencies=[Depends(require("UPLOAD_DELETE"))])
 def delete_batch(batch_ref: str, db: DbDep, user: UserDep,
-                 reason: str | None = None):
+                 background: BackgroundTasks, reason: str | None = None):
     """Delete a batch, restore whatever it displaced, and recalculate.
 
     Held to `UPLOAD_DELETE`, which `DATA_OPERATOR` does not carry: uploading
@@ -253,6 +261,8 @@ def delete_batch(batch_ref: str, db: DbDep, user: UserDep,
     """
     svc = BatchDeleteService(db, actor_id=user.id, actor_username=user.username)
     try:
-        return svc.delete(batch_ref, reason=reason)
+        result = svc.delete(batch_ref, reason=reason)
     except BatchDeleteError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    background.add_task(spawn_warm_cache, batch_ref, "absent")
+    return result

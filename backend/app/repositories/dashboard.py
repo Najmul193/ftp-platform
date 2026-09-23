@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.domain.scope import ScopeFilter, intersect_requested
 from app.domain.types import Side
+from app.repositories.cache import cached
 from app.models import (
     AggDailyBranch, AggDailyBranchProduct, AggDailyCategory, Branch,
     FtpCalculationResult, Product,
@@ -208,6 +209,7 @@ class DashboardRepo:
 
     # ------------------------------------------------------------------ #
 
+    @cached
     def kpis(self, f: Filters) -> dict[str, Any]:
         if f.needs_fact_grain:
             return self._fact_kpis(f)
@@ -388,6 +390,7 @@ class DashboardRepo:
             })
         return out
 
+    @cached
     def by_branch(self, f: Filters) -> list[dict]:
         names = self._names()["branch"]
         label = lambda r: f"{r[1]} {names.get(r[1], ('', ''))[1]}".strip()  # noqa: E731
@@ -401,6 +404,7 @@ class DashboardRepo:
         return self._breakdown(
             f, m, [m.branch_id, m.branch_code], label, parent, codes=code)
 
+    @cached
     def by_division(self, f: Filters) -> list[dict]:
         """The coarsest rollup -- around eight rows, so it charts directly."""
         names = self._names()["division"]
@@ -411,6 +415,7 @@ class DashboardRepo:
         m = _grain(f)
         return self._breakdown(f, m, [m.division_id], label)
 
+    @cached
     def by_district(self, f: Filters) -> list[dict]:
         """Around sixty rows: readable as a ranked table, not as a bar chart."""
         n = self._names()
@@ -422,6 +427,7 @@ class DashboardRepo:
         m = _grain(f)
         return self._breakdown(f, m, [m.district_id], label, parent)
 
+    @cached
     def by_product(self, f: Filters) -> list[dict]:
         if f.needs_fact_grain:
             F = FtpCalculationResult
@@ -429,6 +435,7 @@ class DashboardRepo:
         m = AggDailyBranchProduct
         return self._breakdown(f, m, [m.product_id, m.product_code], lambda r: r[1])
 
+    @cached
     def by_category(self, f: Filters) -> list[dict]:
         if f.needs_fact_grain:
             return self._fact_breakdown(
@@ -476,6 +483,7 @@ class DashboardRepo:
             })
         return out
 
+    @cached
     def trend(self, f: Filters) -> list[dict]:
         if f.needs_fact_grain:
             F = FtpCalculationResult
@@ -507,6 +515,7 @@ class DashboardRepo:
             })
         return out
 
+    @cached
     def heatmap(self, f: Filters) -> list[dict]:
         if f.needs_fact_grain:
             F = FtpCalculationResult
@@ -537,6 +546,7 @@ class DashboardRepo:
 
     # ------------------------------------------------------------------ #
 
+    @cached
     def accounts(self, f: Filters, *, limit: int = 50, offset: int = 0,
                  order: str = "ftp_income", desc: bool = True) -> tuple[list, int]:
         """The one path that reads facts. Always bounded and paginated."""
@@ -566,7 +576,11 @@ class DashboardRepo:
         col = getattr(F, order, F.ftp_income)
         rows = self.s.scalars(
             select(F).where(where)
-            .order_by(col.desc() if desc else col.asc(), F.account_no)
+            # A full key as tie-breaker: without the date and branch, equal
+            # values on different days fall in arbitrary order and paging can
+            # show a row twice while skipping another.
+            .order_by(col.desc() if desc else col.asc(), F.business_date.desc(),
+                      F.branch_code, F.account_no)
             .limit(min(limit, 500)).offset(offset)
         ).all()
         return list(rows), total

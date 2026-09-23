@@ -91,6 +91,11 @@ class UploadPipeline:
         self.s = session
         self.actor_id = actor_id
         self.actor_username = actor_username
+        # Loading or removing a day is a write that must finish once started.
+        # The database may cap statement time for the read-heavy dashboards
+        # (so a slow page cannot pile up queries); that cap must not cut a
+        # load in half, so it is lifted for this transaction only.
+        self.s.execute(text("SET LOCAL statement_timeout = 0"))
 
     # ------------------------------------------------------------------ #
     # 1. RECEIVE

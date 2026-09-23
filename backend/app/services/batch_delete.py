@@ -25,7 +25,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -67,6 +67,11 @@ class BatchDeleteService:
         self.s = session
         self.actor_id = actor_id
         self.actor_username = actor_username
+        # Loading or removing a day is a write that must finish once started.
+        # The database may cap statement time for the read-heavy dashboards
+        # (so a slow page cannot pile up queries); that cap must not cut a
+        # load in half, so it is lifted for this transaction only.
+        self.s.execute(text("SET LOCAL statement_timeout = 0"))
 
     # ------------------------------------------------------------------ #
 

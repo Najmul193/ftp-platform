@@ -30,7 +30,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Literal
 
-from sqlalchemy import Select, and_, case, func, select
+from sqlalchemy import Float, Select, String, and_, case, column, func, select, values
 from sqlalchemy.orm import Session
 
 from app.domain.scope import ScopeFilter
@@ -39,6 +39,7 @@ from app.models import (
     AggDailyBranch, AggDailyBranchProduct, AggDailyProduct,
     FtpCalculationResult,
 )
+from app.repositories.cache import cached
 from app.repositories.dashboard import (
     RATE_Q, ZERO, DashboardRepo, Filters, _apply_filters, _apply_scope,
     _fact_sums, _grain, _sums,
@@ -159,6 +160,7 @@ class AnalyticsRepo:
     # 1. KPIs with period-over-period comparison
     # ------------------------------------------------------------------ #
 
+    @cached
     def kpis_with_comparison(self, f: Filters) -> dict[str, Any]:
         """Headline figures plus the change against the preceding window.
 
@@ -204,6 +206,7 @@ class AnalyticsRepo:
     # 2. Enriched trend: moving average, cumulative, run rate
     # ------------------------------------------------------------------ #
 
+    @cached
     def trend_enriched(self, f: Filters, *, ma_window: int = 7) -> dict[str, Any]:
         points = self.dash.trend(f)
         if not points:
@@ -256,6 +259,7 @@ class AnalyticsRepo:
     # 3. Variance bridge -- volume vs rate vs interaction
     # ------------------------------------------------------------------ #
 
+    @cached
     def variance_bridge(self, f: Filters, *, by: Dimension = "product") -> dict[str, Any]:
         """Why did FTP profit change between this window and the last?
 
@@ -435,6 +439,7 @@ class AnalyticsRepo:
     # 4. Spread waterfall
     # ------------------------------------------------------------------ #
 
+    @cached
     def spread_waterfall(self, f: Filters, *, by: Dimension | None = None) -> dict[str, Any]:
         """Where the FTP margin comes from, decomposed into its four components.
 
@@ -495,6 +500,7 @@ class AnalyticsRepo:
     # 5. Concentration -- Pareto and HHI
     # ------------------------------------------------------------------ #
 
+    @cached
     def concentration(self, f: Filters, *, by: Dimension = "branch") -> dict[str, Any]:
         """How dependent the book is on a few segments.
 
@@ -561,6 +567,7 @@ class AnalyticsRepo:
     # 6. Movers
     # ------------------------------------------------------------------ #
 
+    @cached
     def movers(self, f: Filters, *, by: Dimension = "branch", limit: int = 5) -> dict[str, Any]:
         """Biggest improvers and deteriorators against the prior window."""
         bridge = self.variance_bridge(f, by=by)
@@ -578,6 +585,7 @@ class AnalyticsRepo:
     # 7. Rankings with quartiles
     # ------------------------------------------------------------------ #
 
+    @cached
     def rankings(self, f: Filters, *, by: Dimension = "branch") -> dict[str, Any]:
         """League table on yield, not just absolute profit.
 
@@ -641,6 +649,7 @@ class AnalyticsRepo:
     # 8. Distribution of FTP rate
     # ------------------------------------------------------------------ #
 
+    @cached
     def rate_distribution(self, f: Filters, *, buckets: int = 12) -> dict[str, Any]:
         """Histogram of account-level FTP rate, balance-weighted.
 
@@ -706,6 +715,7 @@ class AnalyticsRepo:
     # 9. Outliers
     # ------------------------------------------------------------------ #
 
+    @cached
     def outliers(self, f: Filters, *, z_threshold: float = 3.0,
                  limit: int = 25) -> dict[str, Any]:
         """Accounts priced unusually for their own product.
@@ -744,7 +754,10 @@ class AnalyticsRepo:
             .join(stats, stats.c.pc == F.product_code)
             .where(where)
             .where(func.abs(z_rate) >= z_threshold)
-            .order_by(func.abs(z_rate).desc())
+            # Holiday rows repeat Thursday's exactly, so ties are common; break
+            # them the same way every time or the list changes between views.
+            .order_by(func.abs(z_rate).desc(), F.business_date.desc(),
+                      F.branch_code, F.account_no)
             .limit(limit)
         ).all()
 
@@ -771,6 +784,7 @@ class AnalyticsRepo:
     # 10. Profit leakage
     # ------------------------------------------------------------------ #
 
+    @cached
     def account_risk(self, f: Filters, *, by: Dimension = "product") -> dict[str, Any]:
         """Loss-making exposure per member of a dimension, at the account grain.
 
@@ -839,6 +853,7 @@ class AnalyticsRepo:
         return {"dimension": by, "available": bool(out),
                 "totals": totals, "segments": out}
 
+    @cached
     def leakage(self, f: Filters, *, limit: int = 20) -> dict[str, Any]:
         """Where the book loses money, and how much it would be worth to fix.
 
@@ -909,6 +924,7 @@ class AnalyticsRepo:
     # 11. Balance vs return scatter
     # ------------------------------------------------------------------ #
 
+    @cached
     def scatter(self, f: Filters, *, by: Dimension = "branch") -> dict[str, Any]:
         """Balance against yield, with medians drawn as quadrant lines.
 
@@ -958,6 +974,7 @@ class AnalyticsRepo:
     # 12. Asset / liability structure
     # ------------------------------------------------------------------ #
 
+    @cached
     def balance_sheet_structure(self, f: Filters) -> dict[str, Any]:
         """Asset and liability sides side by side, with the funding gap.
 
@@ -1104,6 +1121,7 @@ class AnalyticsRepo:
         bal = row["total_balance"]
         return (row["ftp_rate_x_balance"] / bal).quantize(RATE_Q) if bal else ZERO
 
+    @cached
     def headline_performers(self, f: Filters) -> dict[str, Any]:
         """Best and worst on every dimension at once, for the dashboard header.
 
@@ -1165,6 +1183,7 @@ class AnalyticsRepo:
             }
         return out
 
+    @cached
     def leaderboard(self, f: Filters, *, group: Dimension, of: Dimension,
                     top: int = 3, metric: str = "profit") -> dict[str, Any]:
         """Top `of` within each `group` -- e.g. the best branch in each division.
@@ -1233,6 +1252,7 @@ class AnalyticsRepo:
             "top": top, "groups": groups,
         }
 
+    @cached
     def product_leadership(self, f: Filters, *, area: Dimension = "district") -> dict[str, Any]:
         """Which product leads in each area, and by how much.
 
@@ -1324,6 +1344,7 @@ class AnalyticsRepo:
     # 14. The banker's daily set
     # ------------------------------------------------------------------ #
 
+    @cached
     def nii_reconciliation(self, f: Filters) -> dict[str, Any]:
         """Net interest income reconciled to FTP -- the canonical FTP output.
 
@@ -1379,6 +1400,7 @@ class AnalyticsRepo:
             ).quantize(Decimal("0.01")),
         }
 
+    @cached
     def deposit_cost_by_product(self, f: Filters) -> dict[str, Any]:
         """Cost of deposits per liability product, on the same slice and basis
         as the bank-level `cost_of_deposits_pct`, so the rows reconcile to it.
@@ -1468,6 +1490,7 @@ class AnalyticsRepo:
             },
         }
 
+    @cached
     def banking_ratios(self, f: Filters) -> dict[str, Any]:
         """The ratios a bank reports daily, computed on the same slice.
 
@@ -1541,6 +1564,7 @@ class AnalyticsRepo:
             "funding_gap": (assets - liabs).quantize(MONEY_Q),
         }
 
+    @cached
     def repricing_opportunity(self, f: Filters, *, limit: int = 25) -> dict[str, Any]:
         """What the book would earn if underpriced accounts moved to their
         product's median spread.
@@ -1552,47 +1576,63 @@ class AnalyticsRepo:
         F = FtpCalculationResult
         where = self._fact_where(f)
 
-        medians = select(
-            F.product_code.label("pc"),
-            func.percentile_cont(0.5).within_group(F.ftp_rate).label("median_rate"),
-        ).where(where).group_by(F.product_code).subquery()
+        # Two passes over the window instead of seven: the medians once, then
+        # every total from one grouped pass that reads them as constants. On a
+        # small managed database each pass is several seconds.
+        medians = {
+            pc: m for pc, m in self.s.execute(
+                select(F.product_code, func.percentile_cont(0.5).within_group(F.ftp_rate))
+                .where(where).group_by(F.product_code)
+            ).all()
+        }
+        med = values(
+            column("pc", String), column("median_rate", Float), name="med",
+        ).data(list(medians.items()) or [("", None)])
 
-        uplift = (medians.c.median_rate - F.ftp_rate) * F.balance / DAY_BASIS
+        uplift = (med.c.median_rate - F.ftp_rate) * F.balance / DAY_BASIS
+        below = F.ftp_rate < med.c.median_rate
 
-        rows = self.s.execute(
+        per_product = self.s.execute(
             select(
-                F.business_date, F.branch_code, F.account_no, F.product_code,
-                F.balance, F.ftp_rate, medians.c.median_rate, uplift.label("uplift"),
+                F.product_code,
+                func.count().filter(below),
+                func.sum(F.balance).filter(below),
+                func.sum(uplift).filter(below),
+                func.sum(F.ftp_income),
             )
-            .join(medians, medians.c.pc == F.product_code)
-            .where(where).where(F.ftp_rate < medians.c.median_rate)
-            .order_by(uplift.desc()).limit(limit)
+            .join(med, med.c.pc == F.product_code)
+            .where(where).group_by(F.product_code)
         ).all()
 
-        totals = self.s.execute(
-            select(func.count(), func.sum(F.balance), func.sum(uplift))
-            .join(medians, medians.c.pc == F.product_code)
-            .where(where).where(F.ftp_rate < medians.c.median_rate)
-        ).one()
+        accounts = sum(r[1] for r in per_product)
+        balance = sum((_d(r[2]) for r in per_product), ZERO)
+        prize = sum((_d(r[3]) for r in per_product if r[3] is not None), ZERO)
+        current = sum((_d(r[4]) for r in per_product), ZERO)
 
-        current = _d(self.s.scalar(select(func.sum(F.ftp_income)).where(where)))
-        prize = _d(totals[2])
+        rows = []
+        if limit:
+            rows = self.s.execute(
+                select(
+                    F.business_date, F.branch_code, F.account_no, F.product_code,
+                    F.balance, F.ftp_rate, med.c.median_rate, uplift.label("uplift"),
+                )
+                .join(med, med.c.pc == F.product_code)
+                .where(where).where(below)
+                .order_by(uplift.desc(), F.business_date.desc(), F.branch_code,
+                          F.account_no).limit(limit)
+            ).all()
 
         return {
-            "accounts_below_median": totals[0] or 0,
-            "balance_below_median": _d(totals[1]).quantize(MONEY_Q),
+            "accounts_below_median": accounts,
+            "balance_below_median": balance.quantize(MONEY_Q),
             "opportunity": prize.quantize(MONEY_Q),
             "current_ftp_profit": current.quantize(MONEY_Q),
             "uplift_pct": ((prize / current * 100).quantize(RATE_Q) if current else None),
             "by_product": [
                 {"product_code": r[0], "accounts": r[1],
-                 "opportunity": _d(r[2]).quantize(MONEY_Q)}
-                for r in self.s.execute(
-                    select(F.product_code, func.count(), func.sum(uplift))
-                    .join(medians, medians.c.pc == F.product_code)
-                    .where(where).where(F.ftp_rate < medians.c.median_rate)
-                    .group_by(F.product_code).order_by(func.sum(uplift).desc())
-                ).all()
+                 "opportunity": _d(r[3]).quantize(MONEY_Q)}
+                for r in sorted((r for r in per_product if r[1]),
+                                key=lambda r: r[3], reverse=True)
             ],
             "top_accounts": [
                 {"business_date": r.business_date, "branch_code": r.branch_code,
@@ -1605,6 +1645,7 @@ class AnalyticsRepo:
             ],
         }
 
+    @cached
     def watchlist(self, f: Filters) -> dict[str, Any]:
         """What needs attention today.
 
@@ -1698,7 +1739,9 @@ class AnalyticsRepo:
             })
 
         # --- repricing upside ------------------------------------------------ #
-        rep = self.repricing_opportunity(f, limit=1)
+        # Same arguments as the repricing card, so the two share one computation
+        # (and one stored result) instead of each sorting the window.
+        rep = self.repricing_opportunity(f, limit=25)
         if rep["opportunity"] and rep["opportunity"] > ZERO:
             items.append({
                 "severity": "info",
@@ -1720,6 +1763,7 @@ class AnalyticsRepo:
             "items": items,
         }
 
+    @cached
     def period_summary(self, f: Filters) -> dict[str, Any]:
         """Month-, quarter- and year-to-date totals against the latest date."""
         latest = self.dash.latest_business_date()
