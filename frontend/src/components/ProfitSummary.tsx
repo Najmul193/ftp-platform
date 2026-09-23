@@ -1,7 +1,7 @@
 import { ReactNode, useMemo, useState } from "react";
 import type { Series } from "../api";
 import Chart, { axisCommon, baseOption, useTokens } from "../components/Chart";
-import { Card, Empty, MiniButton, Table } from "../components/ui";
+import { Card, Empty, MiniButton, Table, TOGGLE_GUTTER } from "../components/ui";
 import { compact, money, n, pct } from "../format";
 
 /** How many bars to draw before the tail is folded away.
@@ -276,7 +276,10 @@ export default function ProfitSummary({
 
           <div style={{ display: "flex", justifyContent: "space-between",
                         borderTop: "1px solid var(--border)", marginTop: 10,
-                        paddingTop: 8, fontSize: 12.5 }}>
+                        paddingTop: 8, fontSize: 12.5,
+                        // Clear the full-screen toggle, which floats over this
+                        // corner and was covering the last digits of the total.
+                        paddingRight: TOGGLE_GUTTER }}>
             <b>Total</b>
             <b className="tnum">{money(grandTotal)}</b>
           </div>

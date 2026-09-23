@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { api, Dim } from "../api";
 import Chart, { axisCommon, baseOption, useTokens } from "../components/Chart";
-import { Card, Empty, Grid, MiniButton, Pill, Table } from "../components/ui";
+import { Card, Empty, Grid, MiniButton, Pill, Table, TOGGLE_GUTTER } from "../components/ui";
 import { compact, money, n, pct } from "../format";
 import { useApp, useAsync } from "../state";
 
@@ -264,7 +264,7 @@ export default function Leaders() {
                   Each still appears on its own in the table below.
                 </p>
               )}
-              <div style={{ marginTop: 10 }}>
+              <div style={{ marginTop: 10, paddingBottom: TOGGLE_GUTTER }}>
                 <Table csvName={`ftp-product-leadership-${area}.csv`}
                        rows={lead.data.areas}
                        cols={[

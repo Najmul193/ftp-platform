@@ -81,9 +81,15 @@ export function Card({
     return () => ro.disconnect();
   }, [expanded]);
 
+  // Every key here must be the same property the base style sets, so React
+  // can diff it back on collapse. `borderWidth: 0` was not: setting the
+  // longhand wiped the `border` shorthand's serialisation, and removing it
+  // again left the width at its initial `medium` (3px). The card came back
+  // two pixels thicker on each side and every chart in it redrew 4px
+  // narrower -- which is what "returns to a distorted position" was.
   const overlay: CSSProperties = expanded
     ? { position: "fixed", inset: 0, zIndex: 100, borderRadius: 0,
-        boxShadow: "none", borderWidth: 0 }
+        boxShadow: "none", border: "none" }
     : {};
 
   return (
@@ -153,6 +159,14 @@ export function Card({
     </section>
   );
 }
+
+/**
+ * Room to leave in the bottom-right of an expandable card's body so content
+ * does not end up underneath the full-screen toggle. A chart can tolerate the
+ * overlap -- that corner is axis, not data -- but anything right-aligned on
+ * the last row, a total most of all, disappears behind it.
+ */
+export const TOGGLE_GUTTER = 34;
 
 /** The expand / exit control that sits over the bottom-right of a chart. */
 const FullscreenToggle = forwardRef<HTMLButtonElement, {
