@@ -191,7 +191,7 @@ export default function Overview() {
       </Grid>
 
       <Grid cols="minmax(0, 1.55fr) minmax(0, 1fr)">
-        <Card title="Daily FTP profit"
+        <Card expandable title="Daily FTP profit"
               subtitle={trend.data?.summary
                 ? `${trend.data.summary.days} days · mean ${money(trend.data.summary.mean_daily)} · volatility ${trend.data.summary.volatility_pct ?? "—"}%`
                 : undefined}
@@ -207,7 +207,7 @@ export default function Overview() {
               : <Table cols={trendCols} rows={points} maxHeight={286} csvName="ftp-daily-trend.csv" />}
         </Card>
 
-        <Card title="Where the margin comes from"
+        <Card expandable title="Where the margin comes from"
               subtitle="FTP profit decomposed into its rate components"
               actions={<ViewToggle view={wfView} setView={setWfView} />}
               footnote="Each component is signed for its side of the balance sheet, so the four sum exactly to net FTP at any grain.">
@@ -231,7 +231,7 @@ export default function Overview() {
       </Grid>
 
       <Grid cols="minmax(0, 1fr) minmax(0, 1fr)">
-        <Card title="Net FTP profit by branch"
+        <Card expandable title="Net FTP profit by branch"
               subtitle="Click a bar to filter the whole page to that branch"
               actions={<ViewToggle view={branchView} setView={setBranchView} />}>
           {(branches.data ?? []).length === 0

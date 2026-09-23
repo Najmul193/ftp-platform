@@ -191,7 +191,7 @@ export default function ProfitSummary({
   ];
 
   return (
-    <Card
+    <Card expandable
       title={title}
       subtitle={subtitle}
       actions={

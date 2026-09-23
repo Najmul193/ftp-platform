@@ -389,7 +389,7 @@ export default function BasicOverview() {
           <div style={{ flex: 1, minWidth: 0,
                         display: "grid", gridTemplateRows: `repeat(2, ${chartRowHeight}px)`,
                         gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <Card title="Branch FTP profitability"
+            <Card expandable title="Branch FTP profitability"
                   subtitle="Asset, liability and net FTP profit per branch"
                   actions={<RankFilter
                     count={rankedBranches.length}
@@ -407,7 +407,7 @@ export default function BasicOverview() {
                   </div>}
             </Card>
 
-            <Card title="Asset vs Liability FTP"
+            <Card expandable title="Asset vs Liability FTP"
                   subtitle="The two sides side-by-side per branch"
                   actions={<RankFilter
                     count={rankedBranches.length}
@@ -425,7 +425,7 @@ export default function BasicOverview() {
                   </div>}
             </Card>
 
-            <Card title="Daily FTP profit trend"
+            <Card expandable title="Daily FTP profit trend"
                   subtitle="Net FTP profit per day in the window">
               {points.length === 0
                 ? <Empty title="No data in this window" hint="Widen the date range or clear a filter." />
@@ -435,7 +435,7 @@ export default function BasicOverview() {
                   </div>}
             </Card>
 
-            <Card title="Product FTP profit"
+            <Card expandable title="Product FTP profit"
                   subtitle="Net FTP profit by product"
                   actions={<RankFilter
                     count={productRows.length}

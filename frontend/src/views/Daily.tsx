@@ -157,7 +157,7 @@ export default function Daily() {
 
       <Grid cols="minmax(0, 1.25fr) minmax(0, 1fr)">
         {/* --- NII reconciliation --- */}
-        <Card title="Where the customer margin goes"
+        <Card expandable title="Where the customer margin goes"
               subtitle="Net interest income split between business units and treasury"
               footnote={!v ? undefined
                 : v.nii_is_negative

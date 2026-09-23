@@ -186,7 +186,7 @@ export default function Analytics() {
       </div>
 
       {/* --- variance bridge --- */}
-      <Card title={`Why profit moved — by ${dim}`}
+      <Card expandable title={`Why profit moved — by ${dim}`}
             subtitle={b?.available
               ? `${longDate(b.prior_period!.start)} – ${longDate(b.prior_period!.end)} vs ${longDate(b.current_period!.start)} – ${longDate(b.current_period!.end)}` +
                 (b.comparison_mode === "split_window"
@@ -237,7 +237,7 @@ export default function Analytics() {
       </Card>
 
       <Grid cols="minmax(0, 1fr) minmax(0, 1fr)">
-        <Card title={`Concentration by ${dim}`}
+        <Card expandable title={`Concentration by ${dim}`}
               subtitle={conc.data?.available
                 ? `HHI ${conc.data.hhi} — ${conc.data.hhi_interpretation}`
                 : undefined}
@@ -263,7 +263,7 @@ export default function Analytics() {
                        ]} />}
         </Card>
 
-        <Card title={`Balance vs yield — by ${dim}`}
+        <Card expandable title={`Balance vs yield — by ${dim}`}
               subtitle="Quadrants split on the medians"
               actions={<ViewToggle view={sView} setView={setSView} />}
               footnote="High balance with low yield is the repricing opportunity: a large book earning a thin spread.">
@@ -285,7 +285,7 @@ export default function Analytics() {
       </Grid>
 
       <Grid cols="minmax(0, 1fr) minmax(0, 1fr)">
-        <Card title="FTP rate distribution"
+        <Card expandable title="FTP rate distribution"
               subtitle="Balance-weighted across account-days"
               footnote="Weighted by balance, not by count: a thousand small accounts at a good spread do not offset one large account priced below cost.">
           {!distOption ? <Empty title="No data" />

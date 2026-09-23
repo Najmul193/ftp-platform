@@ -231,7 +231,7 @@ export default function Leaders() {
       </Card>
 
       {/* --- which product leads where --- */}
-      <Card title="Which product leads where"
+      <Card expandable title="Which product leads where"
             subtitle={lead.data?.available
               ? `${lead.data.area_count} areas · ${lead.data.product_count} products`
               : undefined}

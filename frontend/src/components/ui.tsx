@@ -1,49 +1,205 @@
-import { ReactNode, useState } from "react";
+import { CSSProperties, ReactNode, forwardRef, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { compact, money, n, pct, signed, toCsv } from "../format";
+import { ExpandedHeight } from "./fullscreen";
 
 // --------------------------------------------------------------------------
 // Card
 // --------------------------------------------------------------------------
 
 export function Card({
-  title, subtitle, children, actions, footnote, pad = true,
+  title, subtitle, children, actions, footnote, pad = true, expandable = false,
 }: {
   title?: ReactNode; subtitle?: ReactNode; children: ReactNode;
   actions?: ReactNode; footnote?: ReactNode; pad?: boolean;
+  /**
+   * Adds the full-screen toggle in the bottom-right of the body. For cards
+   * whose body is a chart: a dense curve is often unreadable at card size.
+   */
+  expandable?: boolean;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const [roomFor, setRoomFor] = useState<number | null>(null);
+  const sectionRef = useRef<HTMLElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const everExpanded = useRef(false);
+
+  // Escape closes, the page behind must not scroll under the overlay, and the
+  // toggle takes focus so the keyboard lands somewhere useful. All of it is
+  // undone on collapse *and* on unmount -- a card removed while expanded (a
+  // filter change that empties the view, say) must not leave the body locked.
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { setExpanded(false); return; }
+      // The overlay covers the page, so Tab must not walk off into the
+      // controls behind it -- they are hidden but still focusable, and a
+      // keyboard user would be typing into something they cannot see.
+      if (e.key !== "Tab") return;
+      const root = sectionRef.current;
+      if (!root) return;
+      const items = Array.from(root.querySelectorAll<HTMLElement>(
+        'button, [href], select, input, textarea, [tabindex]:not([tabindex="-1"])',
+      )).filter((el) => !el.hasAttribute("disabled") && el.offsetParent !== null);
+      if (!items.length) return;
+      const first = items[0], last = items[items.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      const outside = !active || !root.contains(active);
+      if (e.shiftKey && (outside || active === first)) {
+        e.preventDefault(); last.focus();
+      } else if (!e.shiftKey && (outside || active === last)) {
+        e.preventDefault(); first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    toggleRef.current?.focus();
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [expanded]);
+
+  // Focus returns to the toggle after collapsing -- it is the same button, so
+  // the eye does not have to hunt for where it went. Never on first render.
+  useEffect(() => {
+    if (expanded) { everExpanded.current = true; return; }
+    if (everExpanded.current) toggleRef.current?.focus();
+  }, [expanded]);
+
+  // Measure the room the body actually has, and hand it to the chart. Read
+  // before paint so the chart is never drawn once at the wrong size and then
+  // corrected, which reads as a flicker.
+  useLayoutEffect(() => {
+    const el = bodyRef.current;
+    if (!expanded || !el) { setRoomFor(null); return; }
+    const measure = () => setRoomFor(el.clientHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [expanded]);
+
+  const overlay: CSSProperties = expanded
+    ? { position: "fixed", inset: 0, zIndex: 100, borderRadius: 0,
+        boxShadow: "none", borderWidth: 0 }
+    : {};
+
   return (
-    <section style={{
-      background: "var(--surface-1)", border: "1px solid var(--border)",
-      borderRadius: "var(--radius)", boxShadow: "var(--shadow)",
-      display: "flex", flexDirection: "column", minWidth: 0,
-    }}>
+    <section
+      ref={sectionRef}
+      style={{
+        background: "var(--surface-1)", border: "1px solid var(--border)",
+        borderRadius: "var(--radius)", boxShadow: "var(--shadow)",
+        display: "flex", flexDirection: "column", minWidth: 0,
+        ...overlay,
+      }}
+      {...(expanded
+        ? { role: "dialog", "aria-modal": true,
+            "aria-label": typeof title === "string" ? title : "Chart, full screen" }
+        : {})}
+    >
       {(title || actions) && (
         <header style={{
           display: "flex", alignItems: "flex-start", justifyContent: "space-between",
-          gap: 12, padding: "14px 16px 0", flexWrap: "wrap",
+          gap: 12, padding: expanded ? "18px 22px 0" : "14px 16px 0", flexWrap: "wrap",
         }}>
           <div style={{ minWidth: 0 }}>
             {title && <h3 style={{
-              margin: 0, fontSize: 13, fontWeight: 600, letterSpacing: ".01em",
-              color: "var(--text-primary)",
+              margin: 0, fontSize: expanded ? 15 : 13, fontWeight: 600,
+              letterSpacing: ".01em", color: "var(--text-primary)",
             }}>{title}</h3>}
             {subtitle && <p style={{
               margin: "2px 0 0", fontSize: 12, color: "var(--text-muted)",
             }}>{subtitle}</p>}
           </div>
+          {/* The filters ride along: a chart is not much use full screen if
+              the controls that decide what it shows stay behind. */}
           {actions && <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>{actions}</div>}
         </header>
       )}
-      <div style={{ padding: pad ? "8px 12px 12px" : 0, flex: 1, minWidth: 0 }}>{children}</div>
+      <div style={{
+        padding: pad ? (expanded ? "10px 22px 16px" : "8px 12px 12px") : 0,
+        flex: 1, minWidth: 0,
+        ...(expandable ? { position: "relative" } : {}),
+        ...(expanded ? { display: "flex", flexDirection: "column", minHeight: 0 } : {}),
+      }}>
+        {/* Always rendered, so expanding re-styles the chart rather than
+            remounting it -- a remount would tear down the ECharts instance
+            and flash. `display: contents` keeps the box out of the layout
+            entirely while the card sits normally on the page. */}
+        <div
+          ref={bodyRef}
+          style={expanded
+            ? { flex: 1, minHeight: 0, overflow: "auto" }
+            : { display: "contents" }}
+        >
+          <ExpandedHeight.Provider value={roomFor}>{children}</ExpandedHeight.Provider>
+        </div>
+        {expandable && (
+          <FullscreenToggle ref={toggleRef} expanded={expanded}
+                            onClick={() => setExpanded((v) => !v)} />
+        )}
+      </div>
       {footnote && (
         <footer style={{
-          padding: "0 16px 12px", fontSize: 11, color: "var(--text-muted)",
-          lineHeight: 1.45,
+          padding: expanded ? "0 22px 16px" : "0 16px 12px",
+          fontSize: 11, color: "var(--text-muted)", lineHeight: 1.45,
         }}>{footnote}</footer>
       )}
     </section>
   );
 }
+
+/** The expand / exit control that sits over the bottom-right of a chart. */
+const FullscreenToggle = forwardRef<HTMLButtonElement, {
+  expanded: boolean; onClick: () => void;
+}>(function FullscreenToggle({ expanded, onClick }, ref) {
+  const [hot, setHot] = useState(false);
+  return (
+    <button
+      ref={ref}
+      type="button"
+      onClick={onClick}
+      onMouseEnter={() => setHot(true)}
+      onMouseLeave={() => setHot(false)}
+      onFocus={() => setHot(true)}
+      onBlur={() => setHot(false)}
+      aria-label={expanded ? "Exit full screen" : "View chart full screen"}
+      title={expanded ? "Exit full screen (Esc)" : "View full screen"}
+      style={{
+        position: "absolute", right: expanded ? 24 : 12, bottom: expanded ? 18 : 12,
+        zIndex: 2, width: 26, height: 26, padding: 0,
+        display: "grid", placeItems: "center", cursor: "pointer",
+        background: "var(--surface-1)", borderRadius: 6,
+        border: "1px solid var(--border-strong)",
+        color: hot ? "var(--text-primary)" : "var(--text-muted)",
+        opacity: hot ? 1 : 0.75, transition: "opacity .15s ease, color .15s ease",
+      }}
+    >
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"
+           strokeLinejoin="round" aria-hidden="true">
+        {expanded ? (
+          <>
+            <polyline points="4 14 10 14 10 20" />
+            <polyline points="20 10 14 10 14 4" />
+            <line x1="14" y1="10" x2="21" y2="3" />
+            <line x1="3" y1="21" x2="10" y2="14" />
+          </>
+        ) : (
+          <>
+            <polyline points="15 3 21 3 21 9" />
+            <polyline points="9 21 3 21 3 15" />
+            <line x1="21" y1="3" x2="14" y2="10" />
+            <line x1="3" y1="21" x2="10" y2="14" />
+          </>
+        )}
+      </svg>
+    </button>
+  );
+});
 
 // --------------------------------------------------------------------------
 // Stat tile -- the form for "the story is one number"

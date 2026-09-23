@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useExpandedHeight } from "./fullscreen";
 import * as echarts from "echarts";
 
 /** Reads the design tokens off :root so charts and chrome can never drift.
@@ -126,6 +127,8 @@ interface Props {
 }
 
 export default function Chart({ option, height = 280, onSelect, loading, ariaLabel }: Props) {
+  // Non-null only while this chart's card is full screen.
+  const expanded = useExpandedHeight();
   const ref = useRef<HTMLDivElement>(null);
   const inst = useRef<echarts.ECharts>();
 
@@ -160,7 +163,13 @@ export default function Chart({ option, height = 280, onSelect, loading, ariaLab
       role="img"
       aria-label={ariaLabel}
       style={{
-        height,
+        // Full screen hands the chart the room the card measured. A chart
+        // sized from its own row count -- a long horizontal bar list -- keeps
+        // that height when it is the larger of the two and the card scrolls
+        // instead, because squeezing ninety-six rows into one screen makes
+        // them unreadable, which is the opposite of what full screen is for.
+        height: expanded == null ? height
+                : Math.max(expanded, typeof height === "number" ? height : 0),
         width: "100%",
         // Hold the previous render at reduced opacity on refetch rather than
         // flashing a skeleton, so nothing jumps.
