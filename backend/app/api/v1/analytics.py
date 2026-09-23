@@ -93,6 +93,12 @@ def leakage(db: DbDep, scope: ScopeDep, f: FiltersDep,
     return AnalyticsRepo(db, scope).leakage(f, limit=limit)
 
 
+@router.get("/account-risk", dependencies=[_view])
+def account_risk(db: DbDep, scope: ScopeDep, f: FiltersDep, by: Dim = "product"):
+    """Loss-making exposure per dimension member, read at the account grain."""
+    return AnalyticsRepo(db, scope).account_risk(f, by=by)
+
+
 @router.get("/scatter", dependencies=[_view])
 def scatter(db: DbDep, scope: ScopeDep, f: FiltersDep, by: Dim = "branch"):
     """Balance against yield, quadranted on the medians."""

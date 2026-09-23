@@ -771,6 +771,74 @@ class AnalyticsRepo:
     # 10. Profit leakage
     # ------------------------------------------------------------------ #
 
+    def account_risk(self, f: Filters, *, by: Dimension = "product") -> dict[str, Any]:
+        """Loss-making exposure per member of a dimension, at the account grain.
+
+        The rollups cannot answer this. `negative_ftp_flag` is a property of one
+        account on one day, so the share of a book priced below its own funding
+        cost only exists in the fact table -- an aggregate that stores net
+        profit has already cancelled the losses against the wins.
+
+        Both a money figure and a rate come back for every member, because they
+        rank differently and each hides something the other shows: the largest
+        drag is usually the largest book, while the worst-priced book is often
+        small enough that its drag never reaches the top of a money ranking.
+        """
+        F = FtpCalculationResult
+        where = self.dash._fact_where(f)
+        col = self._fact_dimension(by)
+        to_label = self._dim_label(by)
+        neg = F.negative_ftp_flag.is_(True)
+
+        rows = self.s.execute(
+            select(
+                col,
+                func.count().label("account_days"),
+                func.count().filter(neg).label("negative_days"),
+                func.sum(F.balance).label("balance"),
+                func.sum(F.balance).filter(neg).label("negative_balance"),
+                func.sum(F.ftp_income).label("ftp_income"),
+                func.sum(F.ftp_income).filter(neg).label("drag"),
+            ).where(where).group_by(col)
+        ).all()
+
+        out = []
+        for r in rows:
+            days = r.account_days or 0
+            bal = _d(r.balance)
+            neg_bal = _d(r.negative_balance)
+            out.append({
+                "label": to_label(r[0]),
+                "account_days": days,
+                "negative_days": r.negative_days or 0,
+                # Share of account-days priced below cost.
+                "loss_rate_pct": (Decimal(r.negative_days or 0) / Decimal(days)
+                                  * 100).quantize(RATE_Q) if days else ZERO,
+                "balance": bal.quantize(MONEY_Q),
+                "negative_balance": neg_bal.quantize(MONEY_Q),
+                # Share of balance sitting on a negative spread. The money at
+                # risk, which is not the same as the count: one large account
+                # below cost outweighs many small ones.
+                "balance_at_risk_pct": ((neg_bal / bal * 100).quantize(RATE_Q)
+                                        if bal else ZERO),
+                "ftp_income": _d(r.ftp_income).quantize(MONEY_Q),
+                # Negative by construction -- the income given up on the
+                # account-days that lose money.
+                "drag": _d(r.drag).quantize(MONEY_Q),
+            })
+
+        # Worst drag first; the client re-ranks when the reader asks for rate.
+        out.sort(key=lambda x: x["drag"])
+        totals = {
+            "account_days": sum(x["account_days"] for x in out),
+            "negative_days": sum(x["negative_days"] for x in out),
+            "drag": sum((x["drag"] for x in out), ZERO),
+            "negative_balance": sum((x["negative_balance"] for x in out), ZERO),
+            "balance": sum((x["balance"] for x in out), ZERO),
+        }
+        return {"dimension": by, "available": bool(out),
+                "totals": totals, "segments": out}
+
     def leakage(self, f: Filters, *, limit: int = 20) -> dict[str, Any]:
         """Where the book loses money, and how much it would be worth to fix.
 

@@ -120,6 +120,8 @@ export const api = {
     request<Distribution>(`/analytics/rate-distribution${qs(f, { buckets })}`),
   outliers: (f: Filters, z = 3) => request<Outliers>(`/analytics/outliers${qs(f, { z })}`),
   leakage: (f: Filters) => request<Leakage>(`/analytics/leakage${qs(f)}`),
+  accountRisk: (f: Filters, by: Dim) =>
+    request<AccountRisk>(`/analytics/account-risk${qs(f, { by })}`),
   scatter: (f: Filters, by: Dim) => request<Scatter>(`/analytics/scatter${qs(f, { by })}`),
   balanceSheet: (f: Filters) => request<BalanceSheet>(`/analytics/balance-sheet${qs(f)}`),
   headlinePerformers: (f: Filters) =>
@@ -349,6 +351,19 @@ export interface Outliers {
   rows: { business_date: string; branch_code: string; account_no: string;
     product_code: string; side: string; balance: Num; normalized_roi: Num;
     ftp_rate: Num; ftp_income: Num; z_rate: Num; z_roi: Num }[];
+}
+
+export interface AccountRisk {
+  dimension: Dim;
+  available: boolean;
+  totals: { account_days: number; negative_days: number; drag: Num;
+            negative_balance: Num; balance: Num };
+  segments: {
+    label: string;
+    account_days: number; negative_days: number; loss_rate_pct: Num;
+    balance: Num; negative_balance: Num; balance_at_risk_pct: Num;
+    ftp_income: Num; drag: Num;
+  }[];
 }
 
 export interface Leakage {
