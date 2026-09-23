@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import type { Series } from "../api";
-import Chart, { axisCommon, baseOption, useTokens } from "../components/Chart";
+import Chart, { axisCommon, baseOption, fixedDomain, useTokens } from "../components/Chart";
 import { Card, Empty, Grid, RankFilter, Stat } from "../components/ui";
 import ProfitSummary from "../components/ProfitSummary";
 import { compact, longDate, money, n, pct, shortDate } from "../format";
@@ -132,6 +132,23 @@ export default function BasicOverview() {
     negative_ftp_count: p.negative_ftp_count, avg_ftp_rate: p.avg_ftp_rate,
   }));
 
+  // Both branch charts page through the same ranking five at a time, and the
+  // axis is fixed across those pages rather than fitted to the five on screen:
+  // otherwise the second five are stretched to the same heights as the first
+  // and a branch earning half as much draws an identical bar.
+  //
+  // The scale is the leading five's, read off the data — so it moves with the
+  // filters and with the ranking basis, and every later page is drawn against
+  // the leaders. Nothing here is a fixed figure.
+  const branchDomain = useMemo(
+    () => fixedDomain(rankedBranches.slice(0, TOP_N).flatMap((r) => [
+      n(r.asset_ftp_profit), n(r.liability_ftp_profit), n(r.net_ftp_profit)])),
+    [rankedBranches]);
+  const sideDomain = useMemo(
+    () => fixedDomain(rankedBranches.slice(0, TOP_N).flatMap((r) => [
+      n(r.asset_ftp_profit), n(r.liability_ftp_profit)])),
+    [rankedBranches]);
+
   // ---- grouped bar: asset vs liability vs net ftp by branch ---------------
   const branchOption = useMemo(() => {
     const labels = branchSlice.map((r) => r.label);
@@ -146,7 +163,8 @@ export default function BasicOverview() {
       },
       xAxis: { type: "category", data: labels, ...axisCommon(t),
                axisLabel: { color: t.textSecondary, fontSize: 11 } },
-      yAxis: { type: "value", ...axisCommon(t), axisLine: { show: false },
+      yAxis: { type: "value", ...axisCommon(t), ...branchDomain,
+               axisLine: { show: false },
                splitLine: { lineStyle: { color: t.grid, width: 1 } },
                axisLabel: { color: t.muted, fontSize: 11,
                             formatter: (v: number) => compact(v) } },
@@ -165,7 +183,7 @@ export default function BasicOverview() {
           emphasis: { focus: "series" } },
       ],
     } as never;
-  }, [branchSlice, t]);
+  }, [branchSlice, branchDomain, t]);
 
   // ---- grouped bar: asset vs liability only -------------------------------
   const sideOption = useMemo(() => {
@@ -181,7 +199,8 @@ export default function BasicOverview() {
       },
       xAxis: { type: "category", data: labels, ...axisCommon(t),
                axisLabel: { color: t.textSecondary, fontSize: 11 } },
-      yAxis: { type: "value", ...axisCommon(t), axisLine: { show: false },
+      yAxis: { type: "value", ...axisCommon(t), ...sideDomain,
+               axisLine: { show: false },
                splitLine: { lineStyle: { color: t.grid, width: 1 } },
                axisLabel: { color: t.muted, fontSize: 11,
                             formatter: (v: number) => compact(v) } },
@@ -196,7 +215,7 @@ export default function BasicOverview() {
           emphasis: { focus: "series" } },
       ],
     } as never;
-  }, [branchSlice, t]);
+  }, [branchSlice, sideDomain, t]);
 
   // ---- line: daily net ftp trend ------------------------------------------
   const trendOption = useMemo(() => {

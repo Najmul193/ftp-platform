@@ -83,6 +83,39 @@ export const axisCommon = (t: Tokens) => ({
   splitLine: { show: true, lineStyle: { color: t.grid, width: 1, type: "solid" as const } },
 });
 
+/** The nearest nice step at or above `raw`: 1, 2, 2.5 or 5 times a power of ten. */
+function niceStep(raw: number) {
+  const pow = 10 ** Math.floor(Math.log10(raw));
+  const f = raw / pow;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * pow;
+}
+
+/**
+ * A value-axis domain that stays put while a chart pages through its rows.
+ *
+ * Left to itself ECharts fits the axis to the rows currently on screen, so a
+ * paged chart redraws the second five at the same bar heights as the first
+ * five and a branch earning half as much looks like the leader. Pass every
+ * value the chart can ever show — not just the page on screen — and all pages
+ * share one scale, so bar height reads as an amount rather than as a rank.
+ *
+ * Rounded out to whole ticks and always spanning zero, so bars keep a zero
+ * baseline. Returns {} when there is nothing to fix, leaving ECharts to
+ * decide.
+ */
+export function fixedDomain(values: number[], ticks = 5) {
+  let hi = 0, lo = 0, seen = false;
+  for (const v of values) {
+    if (!Number.isFinite(v)) continue;
+    seen = true;
+    if (v > hi) hi = v;
+    if (v < lo) lo = v;
+  }
+  if (!seen || hi === lo) return {};
+  const step = niceStep((hi - lo) / ticks);
+  return { min: Math.floor(lo / step) * step, max: Math.ceil(hi / step) * step };
+}
+
 interface Props {
   option: echarts.EChartsOption;
   height?: number | string;
