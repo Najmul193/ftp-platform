@@ -116,6 +116,27 @@ class AnalyticsRepo:
             "district": F.district_id,
         }[by]
 
+    def _dim_label(self, by: Dimension):
+        """Turn a dimension key into the name a reader recognises.
+
+        Both grains label through this. They used to do it separately, and had
+        drifted: the fact grain resolved ids against the organisation, while
+        the aggregate grain invented "Division 1" and "District 14" from the id
+        alone. Since the grain is chosen by whether a filter needs account-level
+        rows, the same division on the same page changed name when an unrelated
+        chip was set.
+        """
+        names = self._label_maps()
+
+        def label(key: Any) -> str:
+            k = key.value if hasattr(key, "value") else key
+            if by == "category":
+                return str(k).replace("_", " ").title()
+            # An id with no row behind it still has to render as something.
+            return names.get(by, {}).get(k, str(k))
+
+        return label
+
     def resolve_period(self, f: Filters) -> Period | None:
         """The window actually covered, filling in open-ended filters."""
         m = _grain(f)
@@ -366,17 +387,13 @@ class AnalyticsRepo:
 
         if f.needs_fact_grain:
             col = self._fact_dimension(by)
-            names = self._label_maps()
+            to_label = self._dim_label(by)
             stmt = (select(col, *_fact_sums())
                     .where(self.dash._fact_where(f)).group_by(col))
             out = []
             for r in self.s.execute(stmt):
-                raw = r[0]
-                key = raw.value if hasattr(raw, "value") else raw
-                label = (str(key).replace("_", " ").title() if by == "category"
-                         else names.get(by, {}).get(key, str(key)))
                 row = {m: _d(getattr(r, m)) for m in _MEASURES}
-                row["label"] = label
+                row["label"] = to_label(r[0])
                 row["account_count"] = r.account_count or 0
                 row["negative_ftp_count"] = r.negative_ftp_count or 0
                 out.append(row)
@@ -398,22 +415,21 @@ class AnalyticsRepo:
         return out
 
     def _dimension(self, by: Dimension, f: Filters):
+        to_label = self._dim_label(by)
         if by == "product":
             m = AggDailyBranchProduct
-            return m, [m.product_code], lambda r: r[0]
+            return m, [m.product_code], lambda r: to_label(r[0])
         if by == "category":
             m = AggDailyBranch
-            return m, [m.branch_category], lambda r: (
-                r[0].value if hasattr(r[0], "value") else str(r[0])
-            )
+            return m, [m.branch_category], lambda r: to_label(r[0])
         if by == "division":
             m = AggDailyBranch
-            return m, [m.division_id], lambda r: f"Division {r[0]}"
+            return m, [m.division_id], lambda r: to_label(r[0])
         if by == "district":
             m = AggDailyBranch
-            return m, [m.district_id], lambda r: f"District {r[0]}"
+            return m, [m.district_id], lambda r: to_label(r[0])
         m = _grain(f)
-        return m, [m.branch_code], lambda r: r[0]
+        return m, [m.branch_code], lambda r: to_label(r[0])
 
     # ------------------------------------------------------------------ #
     # 4. Spread waterfall
