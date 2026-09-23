@@ -3,8 +3,8 @@
 Funds Transfer Pricing for a bank. Replaces the `FTP1.xlsm` workbook with a
 governed, auditable, multi-user system.
 
-The engine reproduces the workbook exactly — 960 account-day rows matching at
-6 decimal places, grand total **53,215.553151**. See
+The engine reproduces the workbook exactly — every account-day row matching at
+6 decimal places, asserted against the workbook's own output on every run. See
 [`docs/PARITY.md`](docs/PARITY.md) and [Tests](#tests).
 
 | | |
@@ -54,10 +54,14 @@ cd frontend && npm install
 
 ### Administrator
 
-The bootstrap account is `admin`. Its password comes from `FTP_ADMIN_PASSWORD`;
-when that is unset the seed falls back to `ChangeMe!2026`, which is published in
-this repository and is therefore suitable for local development only. Seeding
-**refuses** the fallback when `ENVIRONMENT=production`.
+The bootstrap account is `admin`. Its password is taken from
+`FTP_ADMIN_PASSWORD`. When that variable is unset the seed falls back to a
+development-only default defined in `backend/app/cli/seed.py`; because that
+value lives in source control it must never be used anywhere reachable, and
+seeding **refuses** it outright when `ENVIRONMENT=production`.
+
+Set `FTP_ADMIN_PASSWORD` to a value of your own before the first deploy, and
+remove it once the account exists and its password has been changed.
 
 The account is flagged `must_change_password`. Set
 `ENFORCE_PASSWORD_CHANGE=true` and it is gated in the API, not only in the UI —
@@ -71,10 +75,10 @@ manage users and read everything.
 
 ### Demo accounts
 
-Created **only when `ENVIRONMENT` is not `production`**. All four share the
-password `Passw0rd!2026x`. They exist to make scope enforcement visible — sign
-in as each and the *same* dashboard returns a different slice, because scope is
-applied server-side on every query:
+Created **only when `ENVIRONMENT` is not `production`**, and sharing one
+development password defined in `backend/app/cli/seed.py`. They exist to make
+scope enforcement visible — sign in as each and the *same* dashboard returns a
+different slice, because scope is applied server-side on every query:
 
 | Username | Scope | Role | Sees |
 |---|---|---|---|
@@ -112,9 +116,9 @@ the row and raises an exception for review.
 
 Rates resolve from governed configuration, not from columns typed into a
 spreadsheet: a global default that each product may override per component. The
-workbook's own data validates the model — liquidity (0.30) and other cost (0.05)
-were identical across all five products, only the benchmark varied. 2,880
-hand-typed cells collapse to one global row and five product rows.
+workbook's own data validates the model — the liquidity and other costs were
+identical across every product and only the benchmark varied, so thousands of
+hand-typed cells collapse to one global row and one row per product.
 
 ```
 LIABILITY   ftp_rate = benchmark - roi - liquidity - other
@@ -218,13 +222,13 @@ Two layers, resolved independently per component. `NULL` on a product component
 means *inherit*; `0.00` means a deliberate zero. Conflating the two is what let
 the workbook price at a zero spread when a rate was merely absent.
 
-| Global | Product override | Result |
+| Global | Product override | Resolves to |
 |---|---|---|
-| `7.00` | `5.50` | 5.50, `PRODUCT_OVERRIDE` |
-| `7.00` | `NULL` | 7.00, `GLOBAL_DEFAULT` |
-| `NULL` | `5.50` | 5.50, `PRODUCT_OVERRIDE` |
+| set | set | the product's value, `PRODUCT_OVERRIDE` |
+| set | `NULL` | the global value, `GLOBAL_DEFAULT` |
+| `NULL` | set | the product's value, `PRODUCT_OVERRIDE` |
 | `NULL` | `NULL` | `ConfigMissingError` — never a zero spread |
-| `7.00` | `0.00` | 0.00, `PRODUCT_OVERRIDE` — an explicit zero |
+| set | `0.00` | zero, `PRODUCT_OVERRIDE` — an explicit zero |
 
 A product benchmark always wins over the global benchmark, so where the global
 benchmark is `NULL` — the seeded posture — a product benchmark is mandatory.
@@ -430,9 +434,11 @@ Known gaps, all of which affect what can be promised to users:
 | **Uploaded file retention** | `storage_uri` records an absolute path on an ephemeral filesystem. After a restart the rejects download and batch re-parse fail on a missing file. Committed data is unaffected. Object storage is designed but not built. |
 | **Recalculation** | No calculation routes exist. A rate change applies only to later calculations; dates already calculated cannot be restated from the application. `CALC_RECALC_HISTORY` is unused. |
 | **V015 / V016 / V017** | Prior-day checks — vanished accounts, >50% balance moves, branch row-count drift — read context that `pipeline._validation_context` never populates, so they cannot fire. |
-| **Maker-checker** | `approval_requests`, `CONFIG_APPROVE` and the status/maker/checker columns exist but no route uses them. Rate changes apply directly, with version history and audit as the compensating controls. A deliberate decision. |
-| **Audit scope** | `GET /audit` is gated on permission alone and applies no scope filter, so any holder sees the whole trail. |
-| **Reference data** | `FTP1.xlsm` carries branch **codes** only. Division and district names in `branch_mapping.csv` are representative, and branch categories are spread across all four values to exercise category analysis. Note that the workbook's codes are `101`–`105` while the seed creates `1`–`3`, so the workbook rejects on V003 until the masters match. Replace both with the bank's real data before UAT. |
+| **Approval workflow** | Rate changes apply directly rather than through a second-person approval step, with effective-dated version history and the audit trail as the compensating controls. A deliberate decision; the reasoning is in the Technical Document. |
+| **Reference data** | The reference workbook carries branch **codes** only. Division and district names in `branch_mapping.csv` are representative, and branch categories are spread across all four values to exercise category analysis. The workbook's branch codes also differ from those the seed creates, so it rejects on V003 until the masters are aligned. Replace both with the bank's real data before UAT. |
+
+Access-control and governance limitations are recorded in the Technical
+Document rather than here, since this repository is public.
 
 ---
 
