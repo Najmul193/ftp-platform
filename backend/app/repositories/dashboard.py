@@ -338,7 +338,7 @@ class DashboardRepo:
         }
 
     def _fact_breakdown(self, f: Filters, keys: Sequence, labels,
-                        parents=None, order_by=None) -> list[dict]:
+                        parents=None, order_by=None, codes=None) -> list[dict]:
         where = self._fact_where(f)
         stmt = (select(*keys, *_fact_sums()).where(where)
                 .group_by(*keys)
@@ -349,13 +349,14 @@ class DashboardRepo:
             out.append({
                 "key": _plain_key(r[0]),
                 "label": labels(r),
+                "code": codes(r) if codes else None,
                 "parent_label": parents(r) if parents else None,
                 **self._row_to_measures(r),
             })
         return out
 
     def _breakdown(self, f: Filters, model: Any, keys: Sequence, labels,
-                   parents=None) -> list[dict]:
+                   parents=None, codes=None) -> list[dict]:
         stmt = _apply_filters(
             _apply_scope(select(*keys, *_sums(model)), model, self._scope_for(f)), model, f
         )
@@ -366,6 +367,8 @@ class DashboardRepo:
             out.append({
                 "key": r[0],
                 "label": labels(r),
+                # The code on its own, for callers with no room for the name.
+                "code": codes(r) if codes else None,
                 # Which division a district sits in, or which district a branch
                 # does. At 64 districts a bare name is ambiguous; the parent is
                 # what makes a row identifiable in a long list.
@@ -389,11 +392,14 @@ class DashboardRepo:
         names = self._names()["branch"]
         label = lambda r: f"{r[1]} {names.get(r[1], ('', ''))[1]}".strip()  # noqa: E731
         parent = lambda r: names.get(r[1], ("", ""))[0] or None            # noqa: E731
+        code = lambda r: r[1]                                              # noqa: E731
         if f.needs_fact_grain:
             F = FtpCalculationResult
-            return self._fact_breakdown(f, [F.branch_id, F.branch_code], label, parent)
+            return self._fact_breakdown(
+                f, [F.branch_id, F.branch_code], label, parent, codes=code)
         m = _grain(f)
-        return self._breakdown(f, m, [m.branch_id, m.branch_code], label, parent)
+        return self._breakdown(
+            f, m, [m.branch_id, m.branch_code], label, parent, codes=code)
 
     def by_division(self, f: Filters) -> list[dict]:
         """The coarsest rollup -- around eight rows, so it charts directly."""

@@ -149,18 +149,41 @@ export default function BasicOverview() {
       n(r.asset_ftp_profit), n(r.liability_ftp_profit)])),
     [rankedBranches]);
 
+  // The axis carries the branch code on its own. A label is "<code> <name>" —
+  // up to 32 characters — and five of those do not fit a half-width card, so
+  // ECharts was dropping whichever ones collided and some of the five went
+  // unlabelled. The code always fits and is enough to tell the bars apart.
+  //
+  // The name is not lost, only moved: the tooltip heads each bar with the full
+  // label. `valueFormatter` is ignored once `formatter` is a function, so the
+  // rows are assembled here instead.
+  const branchTooltip = useMemo(() => {
+    const full = new Map(branchSlice.map(
+      (r) => [String(r.code ?? r.label), r.label]));
+    const esc = (v: string) => v.replace(/[&<>"]/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string);
+    return {
+      trigger: "axis",
+      axisPointer: { type: "shadow" },
+      formatter: (ps: { name: string; marker: string;
+                        seriesName: string; value: number }[]) => {
+        if (!ps.length) return "";
+        const rows = ps.map((q) =>
+          `${q.marker}${q.seriesName}<span style="float:right;margin-left:18px;` +
+          `font-weight:600">${money(q.value)}</span>`).join("<br/>");
+        return `<div style="margin-bottom:4px;font-weight:600">` +
+               `${esc(full.get(ps[0].name) ?? ps[0].name)}</div>${rows}`;
+      },
+    };
+  }, [branchSlice]);
+
   // ---- grouped bar: asset vs liability vs net ftp by branch ---------------
   const branchOption = useMemo(() => {
-    const labels = branchSlice.map((r) => r.label);
+    const labels = branchSlice.map((r) => String(r.code ?? r.label));
     return {
       ...baseOption(t),
       grid: { left: 8, right: 16, top: 34, bottom: 4, containLabel: true },
-      tooltip: {
-        ...baseOption(t).tooltip,
-        trigger: "axis",
-        axisPointer: { type: "shadow" },
-        valueFormatter: (v: number) => money(v),
-      },
+      tooltip: { ...baseOption(t).tooltip, ...branchTooltip },
       xAxis: { type: "category", data: labels, ...axisCommon(t),
                axisLabel: { color: t.textSecondary, fontSize: 11 } },
       yAxis: { type: "value", ...axisCommon(t), ...branchDomain,
@@ -183,20 +206,15 @@ export default function BasicOverview() {
           emphasis: { focus: "series" } },
       ],
     } as never;
-  }, [branchSlice, branchDomain, t]);
+  }, [branchSlice, branchDomain, branchTooltip, t]);
 
   // ---- grouped bar: asset vs liability only -------------------------------
   const sideOption = useMemo(() => {
-    const labels = branchSlice.map((r) => r.label);
+    const labels = branchSlice.map((r) => String(r.code ?? r.label));
     return {
       ...baseOption(t),
       grid: { left: 8, right: 16, top: 34, bottom: 4, containLabel: true },
-      tooltip: {
-        ...baseOption(t).tooltip,
-        trigger: "axis",
-        axisPointer: { type: "shadow" },
-        valueFormatter: (v: number) => money(v),
-      },
+      tooltip: { ...baseOption(t).tooltip, ...branchTooltip },
       xAxis: { type: "category", data: labels, ...axisCommon(t),
                axisLabel: { color: t.textSecondary, fontSize: 11 } },
       yAxis: { type: "value", ...axisCommon(t), ...sideDomain,
@@ -215,7 +233,7 @@ export default function BasicOverview() {
           emphasis: { focus: "series" } },
       ],
     } as never;
-  }, [branchSlice, sideDomain, t]);
+  }, [branchSlice, sideDomain, branchTooltip, t]);
 
   // ---- line: daily net ftp trend ------------------------------------------
   const trendOption = useMemo(() => {

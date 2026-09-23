@@ -264,6 +264,11 @@ export interface Summary extends Kpis {
 
 export interface Series {
   key: string | number; label: string;
+  /**
+   * The bare code behind the label, where the level has one. `label` is
+   * "<code> <name>"; a chart axis only has room for the code.
+   */
+  code?: string | null;
   /** The level above: a district's division, a branch's district. */
   parent_label?: string | null;
   asset_ftp_profit: Num; liability_ftp_profit: Num; net_ftp_profit: Num;
