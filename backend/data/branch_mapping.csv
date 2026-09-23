@@ -1,13 +1,82 @@
-# BRANCH MAPPING -- the 3 branch codes carried by the bank's own FTP workbook
-# (1-3), named for the Bangladeshi divisions/districts they stand in.
+# BRANCH MAPPING -- the bank's 70 branches: the Branch Master of the one-day
+# position file (codes 100-161), plus 8 codes that file's data carries without a
+# master row (188, 199, 201, 205, 290, 401, 502, 786), named and placed by HO on
+# 2026-09-24.
 #
 # The bank feed carries branch CODE only, with no names. Edit this file and
-# re-run:  python -m app.cli.seed
+# re-run:  python -m app.cli.seed   (it only adds branches that do not exist)
 # Or maintain branches through the HO admin screens once the API is running.
 #
 # category must be one of: METRO, URBAN, SEMI_URBAN, RURAL
 # division_code must exist in divisions.csv; district_code in districts.csv.
 branch_code,branch_name,division_code,district_code,category,opened_on
-1,Dhaka Main Branch,DK,DHK,METRO,2005-04-01
-2,Chattogram Main Branch,CT,CTG,URBAN,2008-07-15
-3,Rajshahi Central Branch,RJ,RAJ,SEMI_URBAN,2011-01-20
+100,Dhaka Main,DK,DHK,METRO,2021-05-08
+101,Gazipur Gulshan,DK,GAZ,URBAN,2019-12-18
+102,Narayanganj Market,DK,NRN,URBAN,1999-01-03
+103,Tangail Court Road,DK,TGL,URBAN,2017-01-18
+104,Manikganj Chowrasta,DK,MAN,URBAN,2011-04-15
+105,Dhaka Main,DK,DHK,SEMI_URBAN,2022-03-23
+106,Chattogram Bazar,CT,CTG,METRO,2006-03-07
+107,Cox's Bazar Bazar,CT,COX,RURAL,2001-02-13
+108,Cumilla Station Road,CT,CUM,URBAN,2017-05-26
+109,Feni Cantonment,CT,FEN,URBAN,2015-02-13
+110,Noakhali Sadar,CT,NOA,URBAN,2018-10-28
+111,Chattogram GEC,CT,CTG,SEMI_URBAN,2020-02-02
+112,Cox's Bazar Sadar,CT,COX,SEMI_URBAN,2000-04-28
+113,Cumilla Zindabazar,CT,CUM,URBAN,2012-11-27
+114,Feni Station Road,CT,FEN,SEMI_URBAN,2009-04-22
+115,Khulna City,KH,KHU,METRO,2017-11-06
+116,Jashore Boalia,KH,JSH,SEMI_URBAN,2003-08-13
+117,Satkhira Chowrasta,KH,SAT,URBAN,2005-11-11
+118,Bagerhat Corporate,KH,BGT,RURAL,2005-01-26
+119,Khulna Zindabazar,KH,KHU,URBAN,2000-04-19
+120,Jashore Bazar,KH,JSH,RURAL,2004-11-16
+121,Satkhira Cantonment,KH,SAT,SEMI_URBAN,2002-05-05
+122,Bagerhat Chowrasta,KH,BGT,URBAN,2015-05-24
+123,Rajshahi Bandar,RJ,RAJ,METRO,2010-06-08
+124,Bogura Uttara,RJ,BOG,RURAL,2014-08-03
+125,Pabna Gulshan,RJ,PAB,RURAL,2002-11-06
+126,Natore Market,RJ,NAT,RURAL,2017-02-13
+127,Rajshahi Cantonment,RJ,RAJ,SEMI_URBAN,2014-05-18
+128,Bogura Main,RJ,BOG,RURAL,2019-12-04
+129,Pabna Chowrasta,RJ,PAB,SEMI_URBAN,2022-05-25
+130,Natore Gulshan,RJ,NAT,SEMI_URBAN,2007-07-06
+131,Rajshahi Zindabazar,RJ,RAJ,SEMI_URBAN,2014-03-17
+132,Sylhet Sadar,SY,SYL,METRO,2018-09-20
+133,Moulvibazar Station Road,SY,MUL,URBAN,2022-03-18
+134,Habiganj Court Road,SY,HAB,RURAL,1998-10-11
+135,Sylhet Gulshan,SY,SYL,SEMI_URBAN,2009-05-08
+136,Moulvibazar Bandar,SY,MUL,URBAN,2000-02-24
+137,Habiganj City,SY,HAB,SEMI_URBAN,2022-09-25
+138,Barishal Uttara,BR,BAR,METRO,2019-08-18
+139,Patuakhali Court Road,BR,PTK,URBAN,2017-07-07
+140,Bhola GEC,BR,BHO,RURAL,2020-05-13
+141,Barishal Station Road,BR,BAR,RURAL,2012-09-15
+142,Patuakhali Boalia,BR,PTK,URBAN,2000-06-01
+143,Bhola Boalia,BR,BHO,SEMI_URBAN,2016-04-01
+144,Barishal Corporate,BR,BAR,URBAN,2005-02-02
+145,Rangpur City,RP,RGP,METRO,2014-04-09
+146,Dinajpur GEC,RP,DIN,SEMI_URBAN,2015-03-24
+147,Kurigram Bandar,RP,KRG,RURAL,2016-08-08
+148,Rangpur Market,RP,RGP,RURAL,2004-02-04
+149,Dinajpur Station Road,RP,DIN,SEMI_URBAN,2011-07-15
+150,Kurigram Corporate,RP,KRG,RURAL,2019-11-21
+151,Rangpur College Road,RP,RGP,URBAN,2021-06-26
+152,Dinajpur Boalia,RP,DIN,RURAL,2004-04-18
+153,Mymensingh Uttara,MY,MYM,METRO,2011-03-09
+154,Jamalpur City,MY,JAM,SEMI_URBAN,2012-09-04
+155,Netrokona Chowrasta,MY,NET,URBAN,1998-02-25
+156,Mymensingh Agrabad,MY,MYM,RURAL,2011-08-16
+157,Jamalpur College Road,MY,JAM,URBAN,1999-03-13
+158,Netrokona College Road,MY,NET,URBAN,2006-08-10
+159,Mymensingh Chowrasta,MY,MYM,SEMI_URBAN,2019-12-16
+160,Jamalpur Sadar,MY,JAM,URBAN,2004-01-19
+161,Netrokona Corporate,MY,NET,RURAL,2021-06-02
+188,Savar Bazar,DK,DHK,URBAN,2012-05-06
+199,Uttara Model Town,DK,DHK,METRO,2008-11-20
+201,Motijheel Corporate,DK,DHK,METRO,1998-06-14
+205,Gulshan Avenue,DK,DHK,METRO,2003-03-09
+290,Mongla Port,KH,BGT,SEMI_URBAN,2016-01-12
+401,Narayanganj BSCIC,DK,NRN,URBAN,2010-02-17
+502,Tongi Industrial Area,DK,GAZ,URBAN,2013-08-25
+786,Agrabad Commercial Area,CT,CTG,METRO,2001-10-04

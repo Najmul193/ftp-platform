@@ -5,11 +5,10 @@ Idempotent: safe to re-run. Run with
     python -m app.cli.seed
 
 The organisation seeded here follows the national structure of Bangladesh:
-8 divisions and 64 districts. The workbook itself carries no organisation data,
-only branch codes 1-3 (the bank's own), which are mapped to representative
-Bangladeshi branches; branch categories are spread across all three values so
-that category analysis is exercised end to end. Swap branch_mapping.csv for the
-bank's real hierarchy before UAT.
+8 divisions and 64 districts. Branches come from branch_mapping.csv (the bank's
+70 branches) and products from PRODUCTS below (the bank's 20 products, from the
+Product Master of its one-day position file). Rows that already exist are never
+changed, so re-running on a live database only fills in what is missing.
 """
 
 from __future__ import annotations
@@ -59,20 +58,51 @@ def load_csv(path: Path) -> list[dict[str, str]]:
         lines = [ln for ln in f if not ln.lstrip().startswith("#")]
     return list(csv.DictReader(lines))
 
-# Product codes are exactly the strings the bank feed carries.
+# Product codes are exactly the strings the bank feed carries. Each carries its
+# own benchmark, liquidity cost and other cost, as the bank's Product Master does.
+# (code, short name, side, liability nature, benchmark, liquidity, other, details)
 PRODUCTS = [
-    ("SBSTU",     "SB Staff",        Side.LIABILITY, LiabilityNature.DEMAND, "5.50",
-     "Savings Bank account for staff."),
-    ("CANOR",     "Current Normal",  Side.LIABILITY, LiabilityNature.DEMAND, "2.00",
-     "Current account, non-interest-bearing. ROI is legitimately 0."),
-    ("FD 1 year", "FD 1 Year",       Side.LIABILITY, LiabilityNature.TIME,   "8.80",
-     "Fixed deposit, one-year tenor."),
-    ("HMLON 5 y", "Home Loan 5Y",    Side.ASSET,     None,                   "9.00",
-     "Home loan, five-year tenor."),
-    ("CC",        "Cash Credit",     Side.ASSET,     None,                   "7.60",
-     "Cash credit working-capital facility."),
+    ("CAIBC", "CURRENT ACCOUNT", Side.LIABILITY, LiabilityNature.DEMAND,
+     "4.00", "0.15", "0.05", "CURRENT ACCOUNT"),
+    ("CDIBC", "CURRENT DEPOSIT - CORPORATE", Side.LIABILITY, LiabilityNature.DEMAND,
+     "2.00", "0.15", "0.05", "CURRENT DEPOSIT - CORPORATE"),
+    ("DPSCH", "DEPOSIT PENSION SCHEME (DPS)", Side.LIABILITY, LiabilityNature.TIME,
+     "8.50", "0.30", "0.05", "DEPOSIT PENSION SCHEME (DPS)"),
+    ("SVSND", "SAVINGS ACCOUNT - STANDARD", Side.LIABILITY, LiabilityNature.DEMAND,
+     "3.80", "0.25", "0.05", "SAVINGS ACCOUNT - STANDARD"),
+    ("SVSND2", "SPECIAL SAVINGS (NOTICE)", Side.LIABILITY, LiabilityNature.DEMAND,
+     "3.60", "0.25", "0.05", "SPECIAL SAVINGS (NOTICE)"),
+    ("SVSPR", "SAVINGS ACCOUNT - PREMIUM", Side.LIABILITY, LiabilityNature.DEMAND,
+     "4.50", "0.25", "0.05", "SAVINGS ACCOUNT - PREMIUM"),
+    ("TDR03", "TERM DEPOSIT - 3 MONTHS", Side.LIABILITY, LiabilityNature.TIME,
+     "7.50", "0.30", "0.05", "TERM DEPOSIT - 3 MONTHS"),
+    ("TDR06", "TERM DEPOSIT - 6 MONTHS", Side.LIABILITY, LiabilityNature.TIME,
+     "8.00", "0.30", "0.05", "TERM DEPOSIT - 6 MONTHS"),
+    ("TDR12", "TERM DEPOSIT - 1 YEAR", Side.LIABILITY, LiabilityNature.TIME,
+     "8.50", "0.35", "0.05", "TERM DEPOSIT - 1 YEAR"),
+    ("TDR36", "TERM DEPOSIT - 3 YEARS", Side.LIABILITY, LiabilityNature.TIME,
+     "9.20", "0.35", "0.05", "TERM DEPOSIT - 3 YEARS"),
+    ("6101", "CORPORATE TIME LOAN REVOLVING", Side.ASSET, None,
+     "8.00", "0.30", "0.05", "CORPORATE TIME LOAN REVOLVING"),
+    ("6102", "TERM LOAN", Side.ASSET, None,
+     "8.20", "0.30", "0.05", "TERM LOAN"),
+    ("6312", "SME TIME LOAN REVOLVING", Side.ASSET, None,
+     "8.30", "0.30", "0.05", "SME TIME LOAN REVOLVING"),
+    ("6313", "TERM LOAN - SME", Side.ASSET, None,
+     "8.50", "0.30", "0.05", "TERM LOAN - SME"),
+    ("CARLN", "AUTO LOAN", Side.ASSET, None,
+     "7.80", "0.30", "0.08", "AUTO LOAN"),
+    ("CCLN1", "CONSUMER CREDIT - PERSONAL LOAN", Side.ASSET, None,
+     "9.00", "0.35", "0.10", "CONSUMER CREDIT - PERSONAL LOAN"),
+    ("COROD", "CORPORATE OVERDRAFT", Side.ASSET, None,
+     "8.60", "0.35", "0.05", "CORPORATE OVERDRAFT"),
+    ("HMLN5", "HOME LOAN - 5 YEARS", Side.ASSET, None,
+     "7.50", "0.30", "0.05", "HOME LOAN - 5 YEARS"),
+    ("LN01", "LOAN AGAINST TRUST RECEIPT (LATR)", Side.ASSET, None,
+     "7.80", "0.30", "0.05", "LOAN AGAINST TRUST RECEIPT (LATR)"),
+    ("MTR1", "MURABAHA TRUST RECEIPT", Side.ASSET, None,
+     "8.00", "0.30", "0.05", "MURABAHA TRUST RECEIPT"),
 ]
-
 
 def _get_or_create(s, model, defaults=None, **lookup):
     obj = s.scalar(select(model).filter_by(**lookup))
@@ -141,7 +171,7 @@ def seed() -> None:
 
         # --- products ------------------------------------------------------ #
         products = {}
-        for code, short, side, nature, _bm, details in PRODUCTS:
+        for code, short, side, nature, _bm, _liq, _oth, details in PRODUCTS:
             products[code], _ = _get_or_create(
                 s, Product,
                 {"short_name": short, "side": side, "liability_nature": nature,
@@ -164,18 +194,18 @@ def seed() -> None:
                 note="Initial configuration.",
             ))
 
-        for code, _short, _side, _nature, benchmark, _details in PRODUCTS:
+        for code, _short, _side, _nature, benchmark, liquidity, other, _details in PRODUCTS:
             pid = products[code].id
             if not s.scalar(select(ProductRateConfig).filter_by(product_id=pid, version=1)):
                 s.add(ProductRateConfig(
                     product_id=pid,
                     version=1,
                     benchmark_rate=Decimal(benchmark),
-                    liquidity_cost=None,     # inherit
-                    other_cost=None,         # inherit
+                    liquidity_cost=Decimal(liquidity),
+                    other_cost=Decimal(other),
                     effective_from=EFFECTIVE_FROM,
                     status="APPROVED",
-                    note="Seeded from FTP1.xlsm product benchmark.",
+                    note="Seeded from the bank's Product Master.",
                 ))
 
         # --- ingestion configuration ---------------------------------------- #
