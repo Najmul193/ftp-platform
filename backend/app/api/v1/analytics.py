@@ -163,6 +163,12 @@ def banking_ratios(db: DbDep, scope: ScopeDep, f: FiltersDep):
     return AnalyticsRepo(db, scope).banking_ratios(f)
 
 
+@router.get("/deposit-cost", dependencies=[_view])
+def deposit_cost(db: DbDep, scope: ScopeDep, f: FiltersDep):
+    """Cost of deposits per liability product; reconciles to the bank ratio."""
+    return AnalyticsRepo(db, scope).deposit_cost_by_product(f)
+
+
 @router.get("/repricing", dependencies=[_view])
 def repricing(db: DbDep, scope: ScopeDep, f: FiltersDep,
               limit: int = Query(25, ge=1, le=200)):

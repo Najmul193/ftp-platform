@@ -133,6 +133,7 @@ export const api = {
   dataVersion: () => request<DataVersion>("/system/data-version"),
   nii: (f: Filters) => request<Nii>(`/analytics/nii-reconciliation${qs(f)}`),
   ratios: (f: Filters) => request<Ratios>(`/analytics/banking-ratios${qs(f)}`),
+  depositCost: (f: Filters) => request<DepositCost>(`/analytics/deposit-cost${qs(f)}`),
   repricing: (f: Filters) => request<Repricing>(`/analytics/repricing${qs(f)}`),
   watchlist: (f: Filters) => request<Watchlist>(`/analytics/watchlist${qs(f)}`),
   periodSummary: (f: Filters) => request<PeriodSummary>(`/analytics/period-summary${qs(f)}`),
@@ -617,6 +618,15 @@ export interface Ratios {
   credit_deposit_ratio_pct: Num | null; casa_ratio_pct: Num | null;
   casa_balance: Num; term_balance: Num; advances: Num; deposits: Num;
   funding_gap: Num;
+}
+export interface DepositCost {
+  days: number;
+  products: { product_code: string; short_name: string;
+    liability_nature: "DEMAND" | "TIME" | null; avg_accounts: Num; avg_balance: Num;
+    share_pct: Num | null; interest_paid: Num; cost_pct: Num | null;
+    ftp_rate_pct: Num | null; ftp_profit: Num }[];
+  total: { avg_balance: Num; interest_paid: Num; cost_pct: Num | null;
+    ftp_rate_pct: Num | null; ftp_profit: Num };
 }
 export interface Repricing {
   accounts_below_median: number; balance_below_median: Num; opportunity: Num;

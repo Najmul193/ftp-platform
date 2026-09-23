@@ -9,7 +9,7 @@ import { useApp, useAsync } from "../state";
 /** The screen a bank runs on in the morning: what needs attention, where the
  *  margin went, and whether the ratios moved. */
 export default function Daily() {
-  const { filters, me } = useApp();
+  const { filters, setFilters, me } = useApp();
   const t = useTokens();
 
   const watch = useAsync(() => api.watchlist(filters), [filters]);
@@ -17,6 +17,7 @@ export default function Daily() {
   const ratios = useAsync(() => api.ratios(filters), [filters]);
   const periods = useAsync(() => api.periodSummary(filters), [filters]);
   const repricing = useAsync(() => api.repricing(filters), [filters]);
+  const depositCost = useAsync(() => api.depositCost(filters), [filters]);
   const summary = useAsync(() => api.summary(filters), [filters]);
 
   // -- acknowledged watchlist items ---------------------------------------- #
@@ -50,6 +51,15 @@ export default function Daily() {
 
   const r = ratios.data;
   const v = nii.data;
+  const dc = depositCost.data;
+  type DcRow = NonNullable<typeof dc>["products"][number] & { is_total?: boolean };
+  const dcRows: DcRow[] = !dc?.products.length ? [] : [
+    ...dc.products,
+    { ...dc.total, product_code: "Total", short_name: "All deposit products",
+      liability_nature: null, avg_accounts: String(dc.products.reduce((a, p) => a + n(p.avg_accounts), 0)),
+      share_pct: "100", is_total: true },
+  ];
+  const neg = (v: unknown) => n(v) < 0 ? { color: "var(--delta-down)" } : undefined;
 
   // NII waterfall: customer margin down to what the business units keep.
   const niiOption = useMemo(() => {
@@ -154,6 +164,50 @@ export default function Daily() {
                 ? "advances exceed deposits" : "self-funded"}
               tone={n(r?.credit_deposit_ratio_pct) > 100 ? "bad" : "good"} />
       </Grid>
+
+      {/* --- cost of deposits, product by product --- */}
+      <Card title="Cost of deposits by product"
+            subtitle={dc?.days
+              ? `Annualised; balances averaged over ${dc.days} day${dc.days === 1 ? "" : "s"} · click a product to filter the page`
+              : undefined}
+            footnote="Cost of deposits is interest paid over deposit balance, annualised on the same basis as the tile above, so the total row equals it. FTP rate is what treasury credits each product for its funding after the customer rate; a negative figure means the product pays depositors more than its funding is worth.">
+        {depositCost.error ? <Empty title="Could not load" hint={depositCost.error} />
+          : (
+            <Table rows={dcRows}
+                   csvName="ftp-cost-of-deposits-by-product.csv"
+                   onRowClick={(x) => { if (!x.is_total) setFilters((f) => ({ ...f, product_code: [x.product_code] })); }}
+                   empty="No deposit products in this selection."
+                   cols={[
+                     { key: "p", label: "Product",
+                       render: (x) => x.is_total ? <b>Total</b>
+                         : <span><b>{x.product_code}</b>{" "}
+                             <span style={{ color: "var(--text-muted)" }}>{x.short_name}</span></span>,
+                       value: (x) => x.product_code },
+                     { key: "t", label: "Type",
+                       render: (x) => x.liability_nature === "DEMAND" ? "CASA"
+                         : x.liability_nature === "TIME" ? "Term" : "",
+                       value: (x) => x.liability_nature ?? "" },
+                     { key: "a", label: "Accounts", align: "right",
+                       render: (x) => n(x.avg_accounts).toLocaleString(undefined, { maximumFractionDigits: 0 }),
+                       value: (x) => x.avg_accounts },
+                     { key: "b", label: "Avg balance", align: "right",
+                       render: (x) => compact(x.avg_balance), value: (x) => x.avg_balance },
+                     { key: "s", label: "Share", align: "right",
+                       render: (x) => pct(x.share_pct, 1), value: (x) => x.share_pct },
+                     { key: "c", label: "Cost of deposits", align: "right",
+                       render: (x) => x.is_total ? <b>{pct(x.cost_pct, 2)}</b> : pct(x.cost_pct, 2),
+                       value: (x) => x.cost_pct },
+                     { key: "i", label: "Interest paid", align: "right",
+                       render: (x) => money(x.interest_paid), value: (x) => x.interest_paid },
+                     { key: "r", label: "FTP rate", align: "right",
+                       render: (x) => <span style={neg(x.ftp_rate_pct)}>{pct(x.ftp_rate_pct, 2)}</span>,
+                       value: (x) => x.ftp_rate_pct },
+                     { key: "f", label: "FTP profit", align: "right",
+                       render: (x) => <span style={neg(x.ftp_profit)}>{money(x.ftp_profit)}</span>,
+                       value: (x) => x.ftp_profit },
+                   ]} />
+          )}
+      </Card>
 
       <Grid cols="minmax(0, 1.25fr) minmax(0, 1fr)">
         {/* --- NII reconciliation --- */}
