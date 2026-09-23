@@ -124,8 +124,7 @@ export default function Leaders() {
           if (!v.rankable) {
             const only = v.top_by_profit;
             return (
-              <Card key={dim} title={`Top ${dim}`} subtitle={`1 in this slice`}
-                    footnote={`Only one ${dim} is in scope, so there is nothing to rank it against. Widen the filters to compare.`}>
+              <Card key={dim} title={`Top ${dim}`} subtitle={`1 in this slice`}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10,
                               padding: "2px 4px" }}>
                   <Row label={`The only ${dim}`} value={only.label}
@@ -140,10 +139,7 @@ export default function Leaders() {
           }
 
           return (
-            <Card key={dim} title={`Top ${dim}`} subtitle={`${v.count} in this slice`}
-                  footnote={v.profit_yield_diverge
-                    ? "The profit leader is not the yield leader: this segment earns most on size, not on pricing."
-                    : "The same segment leads on both profit and yield."}>
+            <Card key={dim} title={`Top ${dim}`} subtitle={`${v.count} in this slice`}>
               <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "2px 4px" }}>
                 <Row label="By profit" value={v.top_by_profit.label}
                      sub={`${money(v.top_by_profit.net_ftp_profit)} · ${pct(v.top_by_profit.share_pct, 1)} of book`}
@@ -163,6 +159,7 @@ export default function Leaders() {
       {/* --- leaderboard within each group --- */}
       <Card title="Best branches within each group"
             subtitle="Ranked inside the group, so large and small groups compare fairly"
+            footnote="Ranked inside each group, so small groups are not buried by large ones. Click any branch to scope the page to it."
             actions={
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 {(["division", "district", "category"] as Dim[]).map((g) => (
@@ -242,7 +239,7 @@ export default function Leaders() {
                 ))}
               </div>
             }
-            footnote="Dominance is the winner's share of that area's profit; margin is how far ahead of the runner-up it sits. A high share with a thin margin is a contested area, not a safe one.">
+            footnote="Grouped, not stacked, so every bar starts at zero and areas compare by eye. Dominance is the winner's share of the area; margin is the gap to the runner-up — a high share with a thin margin is contested.">
         {!lead.data?.available
           ? <Empty title="No data" hint={lead.data?.reason} />
           : (
@@ -321,8 +318,16 @@ function Row({ label, value, sub, tone }: {
       <div style={{ minWidth: 0 }}>
         <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: ".05em",
                       textTransform: "uppercase", color: "var(--text-muted)" }}>{label}</div>
-        <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--text-primary)",
-                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <div style={{
+          fontSize: 13.5, fontWeight: 600,
+          // The weakest member is named in the status colour so the eye finds
+          // it without reading all three rows. Only `critical` is coloured:
+          // if the good rows were green too, nothing would stand out. The
+          // colour never travels alone -- the ▼ and the WEAKEST label carry
+          // the same meaning for anyone who cannot separate the hues.
+          color: tone === "critical" ? color : "var(--text-primary)",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}>
           {value}
         </div>
         <div className="tnum" style={{ fontSize: 11.5, color: "var(--text-secondary)" }}>

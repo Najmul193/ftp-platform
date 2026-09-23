@@ -253,7 +253,7 @@ export default function Accounts() {
                   ))}
                 </div>
               }
-              footnote="Drag is the FTP income given up on account-days priced below their own funding cost. Ranking by money finds the biggest books; ranking by rate finds the worst-priced ones, which are often too small to reach the top on money alone.">
+              footnote="Drag is the FTP income given up where an account is priced below its own funding cost. Money finds the biggest books; rate finds the worst-priced ones.">
           {!leakOption
             ? <Empty title="No loss-making accounts in this slice" />
             : <Chart option={leakOption} height={300} loading={risk.loading}
@@ -262,7 +262,7 @@ export default function Accounts() {
 
         <Card expandable title="Balance above vs below cost"
               subtitle={`Highest ${TOP_N} by share at risk, by ${dim}`}
-              footnote="The share of balance sitting on a negative spread. Not the same as the count of accounts: one large account below cost outweighs many small ones, which is why this is weighted by balance.">
+              footnote="Share of balance on a negative spread — weighted by balance, since one large account below cost outweighs many small ones.">
           {!mixOption
             ? <Empty title="No balance in this slice" />
             : <Chart option={mixOption} height={300} loading={risk.loading}
@@ -272,7 +272,7 @@ export default function Accounts() {
 
       <Card expandable title="Is the leakage concentrated?"
             subtitle={`How much of the total drag the worst ${TOP_N} ${dim}s account for`}
-            footnote="A steep curve means a handful of repricing decisions would recover most of the loss. A flat one means the problem is spread across the book and needs a policy change rather than a list of exceptions.">
+            footnote="A steep curve means a few repricing decisions recover most of the loss; a flat one means it needs a policy change, not a list of exceptions.">
         {!paretoOption
           ? <Empty title="Nothing to concentrate" hint="No loss-making account-days in this slice." />
           : <Chart option={paretoOption} height={300} loading={risk.loading}

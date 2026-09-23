@@ -145,7 +145,9 @@ export function Card({
       {footnote && (
         <footer style={{
           padding: expanded ? "0 22px 16px" : "0 16px 12px",
-          fontSize: 11, color: "var(--text-muted)", lineHeight: 1.45,
+          // A footnote explains the card; it never competes with it. Set a
+          // step below the smallest data text so the eye reaches it last.
+          fontSize: 10.5, color: "var(--text-muted)", lineHeight: 1.4,
         }}>{footnote}</footer>
       )}
     </section>
