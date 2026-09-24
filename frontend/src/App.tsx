@@ -18,10 +18,12 @@ import Upload from "./views/Upload";
 
 //: Basic overview is first and is where a session lands after sign-in.
 //: `currentView` defaults to the same id, so the landing page and the first
-//: nav item cannot drift. `desc` is the one line under the page title.
+//: nav item cannot drift. `desc` is the one line under the page title;
+//: `bare` pages skip the title block to give the screen to their charts.
 const NAV: { id: string; label: string; group: string; icon: IconName;
-             desc: string; perm?: string }[] = [
-  { id: "basic", label: "Basic overview", group: "Analyse", icon: "dashboard",
+             desc: string; perm?: string; bare?: boolean }[] = [
+  // The landing page opens straight onto its four charts.
+  { id: "basic", label: "Basic overview", group: "Analyse", icon: "dashboard", bare: true,
     desc: "Branch, product and side-by-side FTP profitability at a glance." },
   { id: "daily", label: "Daily", group: "Analyse", icon: "calendar",
     desc: "What needs attention, where the margin went, and whether the ratios moved." },
@@ -203,14 +205,14 @@ function Shell() {
 
         <div style={{ padding: narrow ? "20px 16px 28px" : "24px 24px 32px",
                       flex: 1, minWidth: 0 }}>
-          <header style={{ marginBottom: 18 }}>
+          {!page.bare && <header style={{ marginBottom: 18 }}>
             <h1 style={{ margin: 0, fontSize: "var(--fs-lg)", fontWeight: 650,
                          letterSpacing: "-.01em", color: "var(--text-primary)" }}>
               {page.label}
             </h1>
             <p style={{ margin: "2px 0 0", fontSize: "var(--fs-base)",
                         color: "var(--text-secondary)" }}>{page.desc}</p>
-          </header>
+          </header>}
           <Current />
         </div>
 
