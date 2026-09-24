@@ -136,10 +136,10 @@ function Shell() {
       )}
 
       <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
-        <div style={{
+        <div className="masthead" style={{
           position: "sticky", top: "env(safe-area-inset-top, 0px)", zIndex: 30,
           display: "flex", flexDirection: "column",
-          background: "var(--surface-2)", borderBottom: "1px solid var(--border)",
+          borderBottom: "1px solid var(--border)",
         }}>
           <div style={{
             display: "flex", alignItems: "center", gap: 8, padding: "6px 12px",
@@ -180,7 +180,7 @@ function Shell() {
           {filtersOpen && <FilterBar />}
         </div>
 
-        <div style={{
+        <div className="canvas" style={{
           display: "flex", alignItems: "center", gap: 10, padding: "8px 20px 0",
           fontSize: 11.5, color: "var(--text-muted)", flexWrap: "wrap",
         }}>
@@ -198,7 +198,7 @@ function Shell() {
           </button>
         </div>
 
-        <div style={{ padding: "12px 20px 28px", flex: 1, minWidth: 0 }}>
+        <div className="canvas" style={{ padding: "12px 20px 28px", flex: 1, minWidth: 0 }}>
           <Current />
         </div>
 

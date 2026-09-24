@@ -90,7 +90,8 @@ export default function FilterBar({ collapsed = false }: { collapsed?: boolean }
 
   return (
     <div style={{
-      background: "var(--surface-2)", borderBottom: "1px solid var(--border)",
+      // Transparent: it always sits inside the masthead, whose print shows through.
+      background: "transparent", borderBottom: "1px solid var(--border)",
       padding: "10px 20px", position: "sticky",
       top: "env(safe-area-inset-top, 0px)", zIndex: 20,
     }}>
