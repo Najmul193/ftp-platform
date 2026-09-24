@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { api, type WatchItem } from "../api";
 import Chart, { useTokens } from "../components/Chart";
 import { waterfallOption } from "../components/waterfall";
-import { Card, Empty, Grid, Pill, Stat, Table } from "../components/ui";
+import { Card, Empty, Grid, MiniButton, Pill, Stat, Table } from "../components/ui";
 import { compact, longDate, money, n, pct } from "../format";
 import { useApp, useAsync } from "../state";
 
@@ -20,6 +20,8 @@ export default function Daily() {
   const depositCost = useAsync(() => api.depositCost(filters), [filters]);
   const advanceYield = useAsync(() => api.advanceYield(filters), [filters]);
   const summary = useAsync(() => api.summary(filters), [filters]);
+  const dcSort = useSort<DcKey>("avg_balance");
+  const aySort = useSort<AyKey>("avg_balance");
 
   // -- acknowledged watchlist items ---------------------------------------- #
   // An operator acknowledges an item once and it stops imposing on every
@@ -55,7 +57,7 @@ export default function Daily() {
   const dc = depositCost.data;
   type DcRow = NonNullable<typeof dc>["products"][number] & { is_total?: boolean };
   const dcRows: DcRow[] = !dc?.products.length ? [] : [
-    ...dc.products,
+    ...dcSort.apply(dc.products),
     { ...dc.total, product_code: "Total", short_name: "All deposit products",
       liability_nature: null, avg_accounts: String(dc.products.reduce((a, p) => a + n(p.avg_accounts), 0)),
       share_pct: "100", is_total: true },
@@ -63,7 +65,7 @@ export default function Daily() {
   const ay = advanceYield.data;
   type AyRow = NonNullable<typeof ay>["products"][number] & { is_total?: boolean };
   const ayRows: AyRow[] = !ay?.products.length ? [] : [
-    ...ay.products,
+    ...aySort.apply(ay.products),
     { ...ay.total, product_code: "Total", short_name: "All loan products",
       avg_accounts: String(ay.products.reduce((a, p) => a + n(p.avg_accounts), 0)),
       share_pct: "100", is_total: true },
@@ -182,6 +184,8 @@ export default function Daily() {
             footnote="Yield on advances is interest received over loan balance, annualised on the same basis as the tile above, so the total row equals it. FTP rate is the spread each product keeps after treasury charges it for funding; a negative figure means the product earns less than its funding costs.">
         {advanceYield.error ? <Empty title="Could not load" hint={advanceYield.error} />
           : (
+            <>
+            <SortButtons sort={aySort} options={AY_SORTS} />
             <Table rows={ayRows}
                    csvName="ftp-yield-on-advances-by-product.csv"
                    onRowClick={(x) => { if (!x.is_total) setFilters((f) => ({ ...f, product_code: [x.product_code] })); }}
@@ -211,6 +215,7 @@ export default function Daily() {
                        render: (x) => <span style={neg(x.ftp_profit)}>{money(x.ftp_profit)}</span>,
                        value: (x) => x.ftp_profit },
                    ]} />
+            </>
           )}
       </Card>
 
@@ -222,6 +227,8 @@ export default function Daily() {
             footnote="Cost of deposits is interest paid over deposit balance, annualised on the same basis as the tile above, so the total row equals it. FTP rate is what treasury credits each product for its funding after the customer rate; a negative figure means the product pays depositors more than its funding is worth.">
         {depositCost.error ? <Empty title="Could not load" hint={depositCost.error} />
           : (
+            <>
+            <SortButtons sort={dcSort} options={DC_SORTS} />
             <Table rows={dcRows}
                    csvName="ftp-cost-of-deposits-by-product.csv"
                    onRowClick={(x) => { if (!x.is_total) setFilters((f) => ({ ...f, product_code: [x.product_code] })); }}
@@ -255,6 +262,7 @@ export default function Daily() {
                        render: (x) => <span style={neg(x.ftp_profit)}>{money(x.ftp_profit)}</span>,
                        value: (x) => x.ftp_profit },
                    ]} />
+            </>
           )}
       </Card>
 
@@ -366,6 +374,59 @@ export default function Daily() {
               `data is loaded, so no period comparison is shown.`}
         </p>
       )}
+    </div>
+  );
+}
+
+// -- sorting the by-product tables ------------------------------------------ #
+// Sorted in the browser: the rows are already on the page, and a product list
+// is short. The Total row is appended after sorting so it always reads last.
+
+type DcKey = "avg_balance" | "cost_pct" | "interest_paid" | "ftp_rate_pct" | "ftp_profit";
+type AyKey = "avg_balance" | "yield_pct" | "interest_received" | "ftp_rate_pct" | "ftp_profit";
+
+const DC_SORTS: [DcKey, string][] = [
+  ["avg_balance", "Balance"], ["cost_pct", "Cost of deposits"],
+  ["interest_paid", "Interest paid"], ["ftp_rate_pct", "FTP rate"],
+  ["ftp_profit", "FTP profit"],
+];
+const AY_SORTS: [AyKey, string][] = [
+  ["avg_balance", "Balance"], ["yield_pct", "Yield"],
+  ["interest_received", "Interest received"], ["ftp_rate_pct", "FTP rate"],
+  ["ftp_profit", "FTP profit"],
+];
+
+function useSort<K extends string>(initial: K) {
+  const [key, setKey] = useState<K>(initial);
+  const [desc, setDesc] = useState(true);
+  const by = (k: K) => {
+    if (k === key) setDesc((d) => !d);
+    else { setKey(k); setDesc(true); }
+  };
+  // A product with no rate (no balance) sorts last in either direction.
+  const apply = <T extends Record<K, unknown>>(rows: T[]): T[] =>
+    [...rows].sort((a, b) => {
+      const av = a[key], bv = b[key];
+      if (av == null) return bv == null ? 0 : 1;
+      if (bv == null) return -1;
+      return desc ? n(bv) - n(av) : n(av) - n(bv);
+    });
+  return { key, desc, by, apply };
+}
+
+function SortButtons<K extends string>({ sort, options }: {
+  sort: ReturnType<typeof useSort<K>>; options: [K, string][];
+}) {
+  return (
+    <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap",
+                  alignItems: "center" }}>
+      <span style={{ fontSize: 11.5, color: "var(--text-muted)" }}>Sort by</span>
+      {options.map(([k, lbl]) => (
+        <MiniButton key={k} active={sort.key === k} onClick={() => sort.by(k)}
+                    title={sort.key === k ? "Click again to reverse" : undefined}>
+          {lbl}{sort.key === k ? (sort.desc ? " ↓" : " ↑") : ""}
+        </MiniButton>
+      ))}
     </div>
   );
 }
