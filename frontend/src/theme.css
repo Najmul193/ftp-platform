@@ -20,6 +20,8 @@
 
   --page:            #e8ebf0;  /* cool-grey canvas */
   --chrome:          #ffffff;  /* sidebar and top bar */
+  --glass:           rgba(255, 255, 255, .62);  /* frosted sidebar */
+  --glass-edge:      rgba(16, 24, 40, .08);
   --surface-1:       #ffffff;
   --surface-2:       #f5f7fa;
   --surface-sunken:  #eef1f5;
@@ -106,6 +108,8 @@
   color-scheme: dark;
   --page:           #0e1015;
   --chrome:         #13161d;
+  --glass:          rgba(19, 22, 29, .62);
+  --glass-edge:     rgba(255, 255, 255, .07);
   --surface-1:      #1a1e27;
   --surface-2:      #222733;
   --surface-sunken: #11141a;
@@ -151,6 +155,8 @@
   color-scheme: dark;
   --page:           #0e1015;
   --chrome:         #13161d;
+  --glass:          rgba(19, 22, 29, .62);
+  --glass-edge:     rgba(255, 255, 255, .07);
   --surface-1:      #1a1e27;
   --surface-2:      #222733;
   --surface-sunken: #11141a;
@@ -308,12 +314,12 @@ a { color: var(--accent); }
  * "data textures" -- contour grain in the brand indigo, dots and pebbles in the
  * brand green -- anchored to the viewport corners and bleeding off them. They
  * frame the page; the middle stays plain and the cards scroll over them.
- * Drawn by frontend/scripts/make_canvas_art.py. As a background of <main> the
- * art can never paint over the sidebar. iOS ignores `fixed` and scrolls it. */
+ * Drawn by frontend/scripts/make_canvas_art.py. It covers the whole shell, so
+ * the art also runs behind the glass sidebar. iOS ignores `fixed` and scrolls it. */
 .canvas-art {
   background:
     var(--art-contour) right -140px top -30px / 780px auto no-repeat fixed,
-    var(--art-dots) left calc(var(--nav-w, 0px) - 90px) bottom -50px / 600px auto no-repeat fixed,
+    var(--art-dots) left -90px bottom -50px / 600px auto no-repeat fixed,
     var(--page);
 }
 @media (max-width: 720px) {
@@ -373,4 +379,27 @@ tr.clickable:hover td { background: var(--surface-2); }
 .btn-active {
   background: var(--accent-soft); color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* The opened menu slides over the page; the dim behind it fades in. */
+@keyframes nav-in { from { transform: translateX(-16px); opacity: 0; } }
+@keyframes scrim-in { from { opacity: 0; } }
+.nav-overlay { animation: nav-in .16s ease-out; }
+.nav-scrim { animation: scrim-in .16s ease-out; }
+
+/* Frosted glass sidebar: the canvas and its art show through, blurred. The
+ * inner highlight on the edge is what makes it read as a pane, not a tint.
+ * Browsers without backdrop blur get the solid chrome instead. */
+.glass {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+          backdrop-filter: blur(18px) saturate(160%);
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, .35);
+}
+:root[data-theme="dark"] .glass { box-shadow: inset -1px 0 0 rgba(255, 255, 255, .04); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .glass { box-shadow: inset -1px 0 0 rgba(255, 255, 255, .04); }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass { background: var(--chrome); }
 }

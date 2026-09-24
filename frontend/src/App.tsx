@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import FilterBar from "./components/FilterBar";
 import { Icon, type IconName } from "./components/icons";
 import { Button, Card, IconButton, MiniButton, Pill } from "./components/ui";
@@ -72,17 +72,14 @@ function Shell() {
   const { me, ready, can, dataInfo, lastSync, refreshData, filters } = useApp();
   const [view, setView] = useState(currentView());
   const narrow = useNarrow();
-  // "1" expanded, "0" the icon rail -- the key predates the rail, when "0"
-  // meant hidden; the rail is what collapsing means now.
-  const [navOpen, setNavOpen] = useState(
-    () => (localStorage.getItem("ftp_nav_open") ?? "1") === "1",
-  );
+  // The sidebar rests as the icon rail, so the page always has its full
+  // width. Opening it lays the full menu over the page rather than pushing
+  // the page aside; choosing a destination puts it away again.
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(
     () => (localStorage.getItem("ftp_filters_open") ?? "1") === "1",
   );
 
-  useEffect(() => { localStorage.setItem("ftp_nav_open", navOpen ? "1" : "0"); }, [navOpen]);
   useEffect(() => { localStorage.setItem("ftp_filters_open", filtersOpen ? "1" : "0"); }, [filtersOpen]);
 
   useEffect(() => {
@@ -91,9 +88,9 @@ function Shell() {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
-  // The drawer is modal: Esc closes it and the page behind does not scroll.
+  // The open menu is modal: Esc closes it and the page behind does not scroll.
   useEffect(() => {
-    if (!drawerOpen || !narrow) return;
+    if (!drawerOpen) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setDrawerOpen(false); };
     document.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
@@ -102,7 +99,7 @@ function Shell() {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
     };
-  }, [drawerOpen, narrow]);
+  }, [drawerOpen]);
 
   if (!ready) {
     return <Centered><p style={{ color: "var(--text-muted)" }}>Loading…</p></Centered>;
@@ -123,29 +120,26 @@ function Shell() {
     (n, [, v]) => n + (Array.isArray(v) ? v.length : v ? 1 : 0), 0,
   );
 
-  const toggleNav = () => (narrow ? setDrawerOpen((v) => !v) : setNavOpen((v) => !v));
+  const toggleNav = () => setDrawerOpen((v) => !v);
+  const closeNav = () => setDrawerOpen(false);
 
   return (
-    <div style={{ display: "flex", minHeight: "100%", background: "var(--page)" }}>
-      {narrow ? (
-        drawerOpen && (
-          <>
-            <div onClick={() => setDrawerOpen(false)} aria-hidden style={{
-              position: "fixed", inset: 0, zIndex: 60, background: "var(--scrim)",
-            }} />
-            <Sidebar items={visible} view={view} rail={false} drawer
-                     onClose={() => setDrawerOpen(false)} />
-          </>
-        )
-      ) : (
-        <Sidebar items={visible} view={view} rail={!navOpen} />
+    <div className="canvas-art" style={{ display: "flex", minHeight: "100%" }}>
+      {/* The rail holds its place in the layout; phones have no room for it. */}
+      {!narrow && <Sidebar items={visible} view={view} rail />}
+      {drawerOpen && (
+        <>
+          <div onClick={closeNav} aria-hidden className="nav-scrim" style={{
+            position: "fixed", inset: 0, zIndex: 60,
+            // Lighter on a desktop, where the page behind stays in view.
+            background: narrow ? "var(--scrim)"
+              : "color-mix(in srgb, var(--scrim) 45%, transparent)",
+          }} />
+          <Sidebar items={visible} view={view} rail={false} drawer onClose={closeNav} />
+        </>
       )}
 
-      {/* --nav-w tells the viewport-anchored canvas art where the page starts. */}
-      <main className="canvas-art" style={{
-        flex: 1, minWidth: 0, display: "flex", flexDirection: "column",
-        "--nav-w": narrow ? "0px" : navOpen ? "240px" : "64px",
-      } as React.CSSProperties}>
+      <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
         <div className="masthead" style={{
           position: "sticky", top: "env(safe-area-inset-top, 0px)", zIndex: 30,
           borderBottom: "1px solid var(--border)",
@@ -154,9 +148,8 @@ function Shell() {
             display: "flex", alignItems: "center", gap: narrow ? 6 : 10,
             padding: narrow ? "0 10px 0 8px" : "0 16px 0 12px", minHeight: 56,
           }}>
-            <IconButton icon={narrow ? "menu" : "panelLeft"} onClick={toggleNav}
-                        label={narrow ? "Open navigation"
-                          : navOpen ? "Collapse sidebar" : "Expand sidebar"} />
+            <IconButton icon="menu" onClick={toggleNav}
+                        label={drawerOpen ? "Close navigation" : "Open navigation"} />
 
             {narrow && (
               <BrandLogo height={24} />
@@ -237,14 +230,22 @@ function Shell() {
   );
 }
 
-/** The navigation column: full, as an icon rail, or as a drawer on narrow
- *  screens. The rail keeps every destination one click away while giving the
- *  width back to the charts. */
+/** The navigation column: the icon rail at rest, or the full menu laid over
+ *  the page when opened. The rail keeps every destination one click away
+ *  while giving the width to the charts. */
 function Sidebar({ items, view, rail, drawer = false, onClose }: {
   items: typeof NAV; view: string; rail: boolean; drawer?: boolean; onClose?: () => void;
 }) {
   const { me, logout, theme, toggleTheme } = useApp();
   const [menuOpen, setMenuOpen] = useState(false);
+  const asideRef = useRef<HTMLElement>(null);
+
+  // Opened as an overlay, the menu takes focus on the current page's link, so
+  // a keyboard user lands inside it rather than behind it.
+  useEffect(() => {
+    if (!drawer) return;
+    asideRef.current?.querySelector<HTMLElement>('[aria-current="page"], .nav-item')?.focus();
+  }, [drawer]);
   const initials = (me?.full_name ?? "?").split(/\s+/).filter(Boolean)
     .slice(0, 2).map((w) => w[0]!.toUpperCase()).join("");
 
@@ -260,12 +261,15 @@ function Sidebar({ items, view, rail, drawer = false, onClose }: {
   const themeLabel = theme === "dark" ? "Switch to light theme" : "Switch to dark theme";
 
   return (
-    <aside className={rail ? "rail" : undefined} style={{
-      width: rail ? 64 : 240, flexShrink: 0, background: "var(--chrome)",
-      borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column",
+    <aside ref={asideRef}
+           className={`glass ${rail ? "rail" : drawer ? "nav-overlay" : ""}`}
+           aria-label={drawer ? "Navigation menu" : undefined} style={{
+      width: rail ? 64 : 240, flexShrink: 0,
+      borderRight: "1px solid var(--glass-edge)", display: "flex", flexDirection: "column",
       height: "100vh", paddingTop: "env(safe-area-inset-top, 0px)",
       ...(drawer
-        ? { position: "fixed", left: 0, top: 0, zIndex: 70, boxShadow: "var(--shadow-md)" }
+        ? { position: "fixed", left: 0, top: 0, zIndex: 70,
+            boxShadow: "0 12px 32px rgba(16,24,40,.18), 0 2px 6px rgba(16,24,40,.08)" }
         : { position: "sticky", top: 0 }),
     }}>
       <div style={{
@@ -310,6 +314,9 @@ function Sidebar({ items, view, rail, drawer = false, onClose }: {
               )}
               {groupItems.map((n) => (
                 <a key={n.id} href={`#/${n.id}`} className="nav-item"
+                   // Choosing a page puts the menu away -- including the page
+                   // already open, which fires no hash change of its own.
+                   onClick={onClose}
                    aria-current={view === n.id ? "page" : undefined}
                    title={rail ? n.label : undefined}
                    aria-label={rail ? n.label : undefined}>

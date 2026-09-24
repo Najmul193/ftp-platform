@@ -5,7 +5,6 @@ import type { ReactNode } from "react";
  *  bundle only carries the handful the shell actually uses. */
 const PATHS = {
   menu: <><line x1="4" y1="6" x2="20" y2="6" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="18" x2="20" y2="18" /></>,
-  panelLeft: <><rect x="3" y="4" width="18" height="16" rx="2" /><line x1="9" y1="4" x2="9" y2="20" /></>,
   filter: <path d="M4 5h16l-6 7.5V19l-4 1.5v-8L4 5z" />,
   refresh: <><path d="M20 11a8 8 0 0 0-14.5-4.5L4 8" /><polyline points="4 3 4 8 9 8" /><path d="M4 13a8 8 0 0 0 14.5 4.5L20 16" /><polyline points="20 21 20 16 15 16" /></>,
   sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></>,
