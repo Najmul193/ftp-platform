@@ -195,6 +195,11 @@ export const api = {
       `/products/${code ? `${code}/` : ""}rates/history${qs({}, { limit })}`),
   /** Uploaded dates still priced on rates that a backdated change superseded. */
   staleDates: () => request<StaleDate[]>("/config/stale-dates"),
+  /** Keep those dates' published figures; new uploads use the new rates. */
+  keepDates: (dates: string[], reason?: string) =>
+    request<{ dates_kept: string[] }>("/config/keep", {
+      method: "POST", body: JSON.stringify({ dates, reason }),
+    }),
   /** Restate those dates on the rates now in force. */
   recalculateDates: (dates: string[], reason?: string) =>
     request<{ run_ref: string; dates_recalculated: string[]; rows: number }>(
@@ -523,6 +528,10 @@ export interface StaleDate {
   rows: number;
   /** Set when the rates for the date cannot be resolved at all. */
   blocked_by: string | null;
+  /** Deliberately kept on the earlier rates rather than recalculated. */
+  kept: boolean;
+  kept_by: string | null;
+  kept_at: string | null;
 }
 
 export interface AuditFilters {

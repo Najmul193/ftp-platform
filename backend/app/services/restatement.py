@@ -13,7 +13,11 @@ clears itself once the date is recalculated or re-uploaded -- there is no flag
 to forget to reset.
 
 Recalculation is never automatic. An administrator sees the stale dates and
-chooses to restate them; the run and the reason are audited.
+chooses, per date, to restate them or to keep the figures already published.
+Either way the rates now in force price every later upload, and the choice is
+audited. A kept date is remembered against the exact rates in force for it, so
+a further rate change touching that date surfaces it again: recalculation is
+whole-day, and a new decision is needed.
 """
 
 from __future__ import annotations
@@ -25,7 +29,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.domain.errors import ConfigMissingError
-from app.models import BankDailyAccountData, CalculationRun, FtpCalculationResult
+from app.models import (
+    BankDailyAccountData, CalculationRun, FtpCalculationResult, SystemSetting,
+)
 from app.repositories.rates import RateBook
 from app.services import audit
 from app.services.pipeline import UploadPipeline, _ref
@@ -43,6 +49,26 @@ class StaleDate:
     #: Set when the rates for the date cannot be resolved at all; such a date
     #: would fail to recalculate, so it is reported but not offered.
     blocked_by: str | None = None
+    #: The published figures were deliberately kept on the earlier rates.
+    kept: bool = False
+    kept_by: str | None = None
+    kept_at: str | None = None
+
+
+#: system_settings key holding the dates kept on earlier rates:
+#: {"YYYY-MM-DD": {"rates": <fingerprint>, "by": username, "at": iso time}}.
+KEPT_KEY = "rate_restatement_kept"
+
+
+def _fingerprint(book: RateBook) -> str:
+    """The rate versions in force for a date, as one comparable string."""
+    overrides = ",".join(f"{code}:{r.version}"
+                         for code, r in sorted(book.overrides.items()))
+    return f"g{book.global_rates.version}|{overrides}"
+
+
+def _kept(session: Session) -> SystemSetting | None:
+    return session.scalar(select(SystemSetting).filter_by(key=KEPT_KEY))
 
 
 def stale_dates(session: Session) -> list[StaleDate]:
@@ -62,6 +88,9 @@ def stale_dates(session: Session) -> list[StaleDate]:
         .order_by(F.business_date)
     ).all()
 
+    kept_row = _kept(session)
+    kept = kept_row.value if kept_row else {}
+
     out: dict[date, StaleDate] = {}
     books: dict[date, RateBook | str] = {}
     for on, code, g_ver, p_ver, n in groups:
@@ -79,7 +108,13 @@ def stale_dates(session: Session) -> list[StaleDate]:
             in_force = override.version if override else None
             if g_ver == book.global_rates.version and p_ver == in_force:
                 continue
-            entry = out.setdefault(on, StaleDate(on))
+            entry = out.get(on)
+            if entry is None:
+                mark = kept.get(on.isoformat())
+                entry = out[on] = StaleDate(on)
+                if mark and mark.get("rates") == _fingerprint(book):
+                    entry.kept = True
+                    entry.kept_by, entry.kept_at = mark.get("by"), mark.get("at")
 
         if code not in entry.products:
             entry.products.append(code)
@@ -94,6 +129,50 @@ class RestatementService:
         self.s = session
         self.actor_id = actor_id
         self.actor_username = actor_username
+
+    def keep(self, dates: list[date], reason: str | None = None) -> dict:
+        """Keep the published figures for stale dates on their earlier rates.
+
+        Nothing is recalculated. The rates now in force still price every
+        later upload, including a re-upload of one of these dates.
+        """
+        if not dates:
+            raise RestatementError("No dates supplied.")
+        wanted = sorted(set(dates))
+        stale = {s.business_date: s for s in stale_dates(self.s)}
+        not_stale = [d for d in wanted if d not in stale]
+        if not_stale:
+            raise RestatementError(
+                "These dates are already priced on the rates in force: "
+                + ", ".join(d.isoformat() for d in not_stale))
+
+        row = _kept(self.s)
+        if row is None:
+            row = SystemSetting(
+                key=KEPT_KEY, value={},
+                description="Dates whose published figures were kept on the "
+                            "rates in force before a backdated rate change.",
+                created_by=self.actor_id)
+            self.s.add(row)
+        value = dict(row.value or {})
+        at = datetime.now(UTC).isoformat()
+        for d in wanted:
+            value[d.isoformat()] = {"rates": _fingerprint(RateBook(self.s, d)),
+                                    "by": self.actor_username, "at": at}
+        # A new dict, so the JSONB column is seen as changed.
+        row.value = value
+        row.updated_by = self.actor_id
+        self.s.flush()
+
+        audit.record(
+            self.s, action="RATE_RESTATE_KEPT", entity_type="calculation_run",
+            entity_id=f"{wanted[0].isoformat()}..{wanted[-1].isoformat()}",
+            after={"dates": [d.isoformat() for d in wanted],
+                   "products": sorted({p for d in wanted for p in stale[d].products}),
+                   "rows": sum(stale[d].rows for d in wanted), "reason": reason},
+            actor_user_id=self.actor_id, actor_username=self.actor_username,
+        )
+        return {"dates_kept": wanted}
 
     def recalculate(self, dates: list[date], reason: str | None = None) -> dict:
         """Rebuild the facts and aggregates for stale dates.

@@ -41,6 +41,7 @@ export default function Rates() {
     useState<{ tone: "good" | "critical"; text: string } | null>(null);
 
   const [historyProduct, setHistoryProduct] = useState("");
+  const pageRef = useRef<HTMLDivElement | null>(null);
   const globalFormRef = useRef<HTMLDivElement | null>(null);
   const productFormRef = useRef<HTMLDivElement | null>(null);
 
@@ -51,7 +52,6 @@ export default function Rates() {
       : editing ? globalFormRef.current : null;
     target?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [editing, editingProduct]);
-  const [recalculating, setRecalculating] = useState(false);
 
   const current = useAsync(() => api.globalConfig(), [refresh]);
   const history = useAsync(() => api.globalConfigHistory(50), [refresh]);
@@ -75,6 +75,13 @@ export default function Rates() {
   // addition to the permission. The API enforces the same rule.
   const editable = can("CONFIG_RATE_EDIT") && me?.scope_level === "HO";
   const reload = () => { setRefresh((r) => r + 1); setEditing(null); setEditingProduct(null); };
+  // After a save the outcome -- and, for a backdated change, the recalculate
+  // or keep decision -- is at the top of the page, so bring the reader there.
+  const afterSave = (text: string) => {
+    setMessage({ tone: "good", text });
+    reload();
+    pageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   const cfg = current.data;
 
@@ -86,17 +93,24 @@ export default function Rates() {
   // A backdated rate change does not reprice days already uploaded. Those days
   // are listed here until someone chooses to restate them.
   const staleDates: StaleDate[] = stale.data ?? [];
-  const recalculable = staleDates.filter((d) => !d.blocked_by);
+  // Awaiting a decision, versus deliberately kept on the earlier rates.
+  const pending = staleDates.filter((d) => !d.kept);
+  const kept = staleDates.filter((d) => d.kept);
+  const [busy, setBusy] = useState<"recalc" | "keep" | null>(null);
+  const [showKept, setShowKept] = useState(false);
 
-  async function recalculate() {
-    const dates = recalculable.map((d) => d.business_date);
+  const daysLabel = (n: number) => `${n} uploaded ${n === 1 ? "day" : "days"}`;
+
+  async function recalculate(list: StaleDate[]) {
+    const dates = list.filter((d) => !d.blocked_by).map((d) => d.business_date);
+    if (!dates.length) return;
     if (!window.confirm(
-      `Recalculate ${dates.length} uploaded ${dates.length === 1 ? "day" : "days"} `
-      + `on the rates now in force?\n\n${dates.map(longDate).join(", ")}\n\n`
+      `Recalculate ${daysLabel(dates.length)} on the rates now in force?\n\n`
+      + `${dates.map(longDate).join(", ")}\n\n`
       + "The current figures for these days are replaced. The previous "
       + "figures are kept as superseded and the run is recorded in the audit log.",
     )) return;
-    setRecalculating(true);
+    setBusy("recalc");
     setMessage(null);
     try {
       const out = await api.recalculateDates(dates, "Backdated rate change");
@@ -106,7 +120,29 @@ export default function Rates() {
       reload();
     } catch (e) {
       setMessage({ tone: "critical", text: (e as Error).message });
-    } finally { setRecalculating(false); }
+    } finally { setBusy(null); }
+  }
+
+  async function keepAsIs(list: StaleDate[]) {
+    const dates = list.map((d) => d.business_date);
+    if (!window.confirm(
+      `Keep the current figures for ${daysLabel(dates.length)}?\n\n`
+      + `${dates.map(longDate).join(", ")}\n\n`
+      + "These days stay on the earlier rates. The new rates apply to every "
+      + "upload from now on, including a re-upload of one of these days. "
+      + "You can still recalculate them later from this page.",
+    )) return;
+    setBusy("keep");
+    setMessage(null);
+    try {
+      const out = await api.keepDates(dates, "Backdated rate change");
+      setMessage({ tone: "good", text:
+        `${out.dates_kept.map(shortDate).join(", ")} kept on the earlier rates. `
+        + "New uploads use the new rates." });
+      reload();
+    } catch (e) {
+      setMessage({ tone: "critical", text: (e as Error).message });
+    } finally { setBusy(null); }
   }
 
   // A product benchmark always overrides the global one, so these are the
@@ -117,7 +153,8 @@ export default function Rates() {
     .map(({ p }) => p.product_code);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+    <div ref={pageRef} style={{ display: "flex", flexDirection: "column", gap: 14,
+                                scrollMarginTop: 24 }}>
       {message && (
         <div style={{
           padding: "9px 12px", borderRadius: 8, fontSize: 13,
@@ -130,34 +167,69 @@ export default function Rates() {
         </div>
       )}
 
-      {staleDates.length > 0 && (
+      {pending.length > 0 && (
         <div style={{
           padding: "10px 12px", borderRadius: 8, fontSize: 13,
           border: "1px solid var(--status-warning)", background: "var(--surface-2)",
           display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
         }}>
-          <Pill tone="warning">Needs recalculation</Pill>
+          <Pill tone="warning">Decision needed</Pill>
           <span style={{ flex: "1 1 320px", color: "var(--text-secondary)",
                          lineHeight: 1.5 }}>
             <b style={{ color: "var(--text-primary)" }}>
               Rates changed for days already uploaded:{" "}
-              {staleDates.map((d) => shortDate(d.business_date)).join(", ")}
+              {pending.map((d) => shortDate(d.business_date)).join(", ")}
             </b>
-            {" "}({[...new Set(staleDates.flatMap((d) => d.products))].join(", ")};{" "}
-            {staleDates.reduce((a, d) => a + d.rows, 0).toLocaleString("en-IN")} rows).
-            {" "}These days still show figures from the old rates.
-            {staleDates.some((d) => d.blocked_by) && (
+            {" "}({[...new Set(pending.flatMap((d) => d.products))].join(", ")};{" "}
+            {pending.reduce((a, d) => a + d.rows, 0).toLocaleString("en-IN")} rows).
+            {" "}These days still show figures from the old rates. Recalculate them,
+            or keep them as they are. New uploads use the new rates either way.
+            {pending.some((d) => d.blocked_by) && (
               <span style={{ color: "var(--status-critical)" }}>
                 {" "}Rates cannot be resolved for{" "}
-                {staleDates.filter((d) => d.blocked_by)
+                {pending.filter((d) => d.blocked_by)
                   .map((d) => shortDate(d.business_date)).join(", ")}.
               </span>
             )}
           </span>
-          {can("CONFIG_RATE_EDIT") && recalculable.length > 0 && (
-            <Button variant="primary" onClick={recalculate} disabled={recalculating}>
-              {recalculating ? "Recalculating…" : "Recalculate now"}
-            </Button>
+          {can("CONFIG_RATE_EDIT") && (
+            <span style={{ display: "inline-flex", gap: 8 }}>
+              {pending.some((d) => !d.blocked_by) && (
+                <Button variant="primary" onClick={() => recalculate(pending)}
+                        disabled={busy !== null}>
+                  {busy === "recalc" ? "Recalculating…" : "Recalculate now"}
+                </Button>
+              )}
+              <Button onClick={() => keepAsIs(pending)} disabled={busy !== null}>
+                {busy === "keep" ? "Saving…" : "Keep as it is"}
+              </Button>
+            </span>
+          )}
+        </div>
+      )}
+
+      {kept.length > 0 && (
+        <div style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 4px",
+                      lineHeight: 1.6 }}>
+          {daysLabel(kept.length)} kept on earlier rates
+          {" "}({kept.reduce((a, d) => a + d.rows, 0).toLocaleString("en-IN")} rows).{" "}
+          <MiniButton onClick={() => setShowKept((v) => !v)}>
+            {showKept ? "Hide" : "Show"}
+          </MiniButton>
+          {showKept && (
+            <div style={{ marginTop: 6, display: "flex", alignItems: "center",
+                          gap: 10, flexWrap: "wrap" }}>
+              <span>
+                {kept.map((d) => `${shortDate(d.business_date)} (${d.products.join(", ")})`)
+                  .join(" · ")}
+                {kept[0].kept_by && ` — kept by ${kept[0].kept_by}`}
+              </span>
+              {can("CONFIG_RATE_EDIT") && (
+                <MiniButton onClick={() => recalculate(kept)} disabled={busy !== null}>
+                  Recalculate these instead
+                </MiniButton>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -216,7 +288,7 @@ export default function Rates() {
           versions={(history.data ?? []).filter((h) => h.status === "APPROVED")}
           dependsOnGlobalBenchmark={dependsOnGlobalBenchmark}
           onCancel={() => setEditing(null)}
-          onSaved={(text) => { setMessage({ tone: "good", text }); reload(); }}
+          onSaved={afterSave}
           onError={(text) => setMessage({ tone: "critical", text })}
         />
         </div>
@@ -286,7 +358,7 @@ export default function Rates() {
           versions={(productHistory.data ?? []).filter((h) =>
             h.product_code === editingProduct.product_code && h.status === "APPROVED")}
           onCancel={() => setEditingProduct(null)}
-          onSaved={(text) => { setMessage({ tone: "good", text }); reload(); }}
+          onSaved={afterSave}
           onError={(text) => setMessage({ tone: "critical", text })}
         />
         </div>
@@ -736,8 +808,9 @@ function BackdateNotice({ from, versions }: {
       {past && (
         <div style={{ marginTop: 6 }}>
           Days already uploaded from {longDate(from)} keep their current figures
-          until recalculated. After saving they are listed at the top of this page
-          with a <b>Recalculate now</b> button.
+          for now. After saving they are listed at the top of this page, where you
+          choose <b>Recalculate now</b> or <b>Keep as it is</b>. New uploads use the
+          new rate either way.
         </div>
       )}
     </div>

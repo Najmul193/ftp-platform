@@ -149,6 +149,10 @@ class FtpCalculationResult(Base):
     asset_ftp_profit: Mapped[Decimal] = mapped_column(Amount, server_default=text("0"))
     liability_ftp_profit: Mapped[Decimal] = mapped_column(Amount, server_default=text("0"))
     negative_ftp_flag: Mapped[bool] = mapped_column(server_default=text("false"))
+    #: Days x 100 for the day-count basis the row was priced on (36,500 for
+    #: ACT/365, 36,000 for ACT/360). Stored rather than looked up, so a day
+    #: kept on earlier rates stays explained by the basis it was computed on.
+    day_divisor: Mapped[int] = mapped_column(Integer, server_default=text("36500"))
 
     is_current: Mapped[bool] = mapped_column(server_default=text("true"))
     created_at: Mapped[datetime] = mapped_column(
@@ -185,7 +189,7 @@ class _AggMixin:
     #: Storing each rate component multiplied by balance is what makes the
     #: spread waterfall possible at any grain: FTP income decomposes exactly
     #: into benchmark, ROI, liquidity and other contributions, because
-    #:     income = SUM(b * rate) / 36500
+    #:     income = SUM(b * rate / day_divisor)
     #: and `rate` is itself a signed sum of those four components.
     roi_x_balance: Mapped[Decimal] = mapped_column(Amount, server_default=text("0"))
     ftp_rate_x_balance: Mapped[Decimal] = mapped_column(Amount, server_default=text("0"))
@@ -210,6 +214,10 @@ class _AggMixin:
 
     account_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     negative_ftp_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    #: The day's income divisor (one basis per date). Every "x_balance" and
+    #: "contrib" measure divided by it is income, so a rollup spanning an
+    #: ACT/365 and an ACT/360 day divides each day by its own convention.
+    day_divisor: Mapped[int] = mapped_column(Integer, server_default=text("36500"))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()")
     )

@@ -174,6 +174,8 @@ class GlobalRates:
     benchmark_rate: Decimal | None = None
     liquidity_cost: Decimal | None = None
     other_cost: Decimal | None = None
+    #: Day-count convention in force; sets the income divisor for the date.
+    day_count_basis: DayCountBasis = DayCountBasis.ACT_365
 
 
 @dataclass(frozen=True, slots=True)

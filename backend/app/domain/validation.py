@@ -71,6 +71,9 @@ class ValidationContext:
     products: dict[str, ProductInfo]
     rate_resolver: Callable[[str, date], ResolvedRates] | None = None
     basis: DayCountBasis = DayCountBasis.ACT_365
+    #: Basis in force per business date; overrides `basis` when supplied, so a
+    #: file spanning a basis change reconciles each day on its own convention.
+    basis_resolver: Callable[[date], DayCountBasis] | None = None
     tolerance: Tolerance = field(default_factory=Tolerance)
     roi_min: Decimal = Decimal("0")
     roi_max: Decimal = Decimal("25")
@@ -199,7 +202,9 @@ def validate_row(
     if side is not None and row.roi is not None and row.balance is not None:
         supplied = row.int_payable if side is Side.LIABILITY else row.int_receivable
         if supplied is not None:
-            expected = row.balance * row.roi / ctx.basis.divisor
+            basis = (ctx.basis_resolver(row.business_date)
+                     if ctx.basis_resolver and row.business_date else ctx.basis)
+            expected = row.balance * row.roi / basis.divisor
             variance = supplied - expected
             if abs(variance) > ctx.tolerance.for_balance(row.balance):
                 add("V013", Severity.WARN,

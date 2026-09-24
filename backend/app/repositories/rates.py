@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.domain.errors import ConfigMissingError
 from app.domain.rates import resolve_rates
-from app.domain.types import GlobalRates, ProductRates, ResolvedRates
+from app.domain.types import DayCountBasis, GlobalRates, ProductRates, ResolvedRates
 from app.models import GlobalRateConfig, Product, ProductRateConfig
 
 
@@ -38,6 +38,7 @@ def load_global(session: Session, on: date) -> GlobalRates:
         benchmark_rate=row.benchmark_rate,
         liquidity_cost=row.liquidity_cost,
         other_cost=row.other_cost,
+        day_count_basis=row.day_count_basis or DayCountBasis.ACT_365,
     )
 
 
@@ -77,6 +78,8 @@ class RateBook:
         self.on = on
         self.global_rates = load_global(session, on)
         self.overrides = load_product_overrides(session, on)
+        #: Income divisor for the date: ACT/365 -> 36,500, ACT/360 -> 36,000.
+        self.basis = self.global_rates.day_count_basis
         self._cache: dict[str, ResolvedRates] = {}
 
     def resolve(self, product_code: str) -> ResolvedRates:

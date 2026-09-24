@@ -37,7 +37,7 @@ from app.models import (
     AggDailyBranch, AggDailyBranchProduct, AggDailyCategory, AggDailyDistrict,
     AggDailyDivision, AggDailyProduct, BankDailyAccountData, Branch,
     CalculationRun, FtpCalculationResult, Product, StagingAccountData,
-    UploadBatch, UploadException,
+    SystemSetting, UploadBatch, UploadException,
 )
 from app.repositories.rates import RateBook
 from app.services import audit
@@ -231,11 +231,18 @@ class UploadPipeline:
                 book = books[on] = RateBook(self.s, on)
             return book.resolve(product_code)
 
+        def basis_for(on: date):
+            book = books.get(on)
+            if book is None:
+                book = books[on] = RateBook(self.s, on)
+            return book.basis
+
         return ValidationContext(
             active_branches=branches,
             products=products,
             rate_resolver=resolver,
-            tolerance=Tolerance(),
+            basis_resolver=basis_for,
+            tolerance=self.tolerance(),
             mapped_columns=set(mapping.capture_as_extras.values()),
         )
 
@@ -383,6 +390,25 @@ class UploadPipeline:
         self.s.flush()
         return run
 
+    def tolerance(self) -> Tolerance:
+        """The interest reconciliation tolerance configured in system settings.
+
+        Falls back to the domain default when the setting is absent, so a fresh
+        database still validates.
+        """
+        if not hasattr(self, "_tolerance"):
+            row = self.s.scalar(
+                select(SystemSetting).filter_by(key="interest_tolerance"))
+            value = row.value if row else {}
+            default = Tolerance()
+            self._tolerance = Tolerance(
+                absolute_floor=Decimal(str(value.get("absolute_floor",
+                                                     default.absolute_floor))),
+                relative_bps=Decimal(str(value.get("relative_bps",
+                                                   default.relative_bps))),
+            )
+        return self._tolerance
+
     def recalculate(self, run: CalculationRun, dates: list[date]) -> CalculationRun:
         """Rebuild the facts for these dates from every current bank row.
 
@@ -437,7 +463,8 @@ class UploadPipeline:
                     int_payable=rec.raw_int_payable,
                     int_receivable=rec.raw_int_receivable, roi=rec.raw_roi,
                 )
-                res = calculate(raw, side, rates)
+                res = calculate(raw, side, rates, basis=book.basis,
+                                tolerance=self.tolerance())
                 b = branches[rec.branch_code]
                 p = products[rec.product_code]
 
@@ -471,6 +498,7 @@ class UploadPipeline:
                         if p.product_code in book.overrides else None
                     ),
                     ftp_rate=res.ftp_rate, ftp_income=res.ftp_income,
+                    day_divisor=int(book.basis.divisor),
                     asset_ftp_profit=res.asset_ftp_profit,
                     liability_ftp_profit=res.liability_ftp_profit,
                     negative_ftp_flag=res.negative_ftp_flag,
@@ -543,6 +571,8 @@ class UploadPipeline:
             func.sum(F.balance),
             func.count(),
             func.count().filter(F.negative_ftp_flag.is_(True)),
+            # One basis per date, so max() is simply that date's divisor.
+            func.max(F.day_divisor),
         ]
 
         def agg_values(row, offset: int) -> dict:
@@ -559,6 +589,7 @@ class UploadPipeline:
                 liquidity_contrib=v[11] or z, other_contrib=v[12] or z,
                 total_balance=v[13] or z,
                 account_count=v[14] or 0, negative_ftp_count=v[15] or 0,
+                day_divisor=v[16] or 36500,
             )
 
         grains = [

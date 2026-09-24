@@ -12,13 +12,17 @@ that carry the most weight:
   that produced it. Exact at every grain, because the aggregates store each
   component *signed* for its side.
 
-Both rest on one identity:
+Both rest on one identity, taken day by day with that day's income divisor
+``D`` (36,500 on ACT/365, 36,000 on ACT/360):
 
-    ftp_income = SUM(balance x ftp_rate) / 36500
-               = B x r / 36500          where r is the balance-weighted rate
+    ftp_income = SUM(balance x ftp_rate / D)
+               = B' x r'                where B' = SUM(balance / D)
+                                        and   r' = ftp_income / B'
 
-which is not an approximation: r is defined as SUM(b*rate)/SUM(b), so B*r is
-exactly SUM(b*rate).
+which is not an approximation: r' is the rate weighted by balance / D, so
+B' x r' is exactly the income. On a single basis B' = B / D and r' is the
+ordinary balance-weighted rate, i.e. the familiar ``B x r / 36500``. The
+per-day ``*_pd`` measures from the dashboard helpers carry the division.
 """
 
 from __future__ import annotations
@@ -41,11 +45,10 @@ from app.models import (
 )
 from app.repositories.cache import cached
 from app.repositories.dashboard import (
-    RATE_Q, ZERO, DashboardRepo, Filters, _apply_filters, _apply_scope,
-    _fact_sums, _grain, _sums,
+    ALL_MEASURES, RATE_Q, ZERO, DashboardRepo, Filters, _apply_filters,
+    _apply_scope, _fact_sums, _grain, _sums,
 )
 
-DAY_BASIS = Decimal(36500)
 MONEY_Q = Decimal("0.01")
 
 Dimension = Literal["branch", "product", "category", "division", "district"]
@@ -263,11 +266,12 @@ class AnalyticsRepo:
     def variance_bridge(self, f: Filters, *, by: Dimension = "product") -> dict[str, Any]:
         """Why did FTP profit change between this window and the last?
 
-        For each segment, income is exactly ``B * r / 36500`` with ``B`` the
-        balance-days and ``r`` the balance-weighted rate. So::
+        For each segment, income is exactly ``B' * r'`` with ``B'`` the
+        balance-days each divided by that day's divisor (36,500 or 36,000) and
+        ``r'`` the matching weighted rate. So::
 
-            dI = [ B0*dr  +  r0*dB  +  dB*dr ] / 36500
-                   ^rate     ^volume   ^interaction
+            dI = B0'*dr'  +  r0'*dB'  +  dB'*dr'
+                 ^rate       ^volume     ^interaction
 
         The three effects sum to the total change with no residual. Segments
         that only exist in one period are reported as pure volume -- there is no
@@ -319,23 +323,27 @@ class AnalyticsRepo:
             c, p = now.get(label), was.get(label)
             b1 = _d(c["total_balance"]) if c else ZERO
             b0 = _d(p["total_balance"]) if p else ZERO
+            # Balance-days, each day divided by its own income divisor.
+            e1 = _d(c["total_balance_pd"]) if c else ZERO
+            e0 = _d(p["total_balance_pd"]) if p else ZERO
 
-            # Profit measured as B*r/36500 rather than as the sum of per-row
+            # Profit measured as B'*r' rather than as the sum of per-row
             # incomes. The two differ by sub-cent row rounding, and only this
             # form makes the decomposition algebraically exact:
-            #     dI = (B1*r1 - B0*r0)/36500
-            #        = [ r0*dB + B0*dr + dB*dr ] / 36500
-            # Using the rounded sum on one side and B*r on the other would leave
-            # a residual that looks like a modelling error but is just rounding.
-            i1 = (_d(c["ftp_rate_x_balance"]) / DAY_BASIS) if c else ZERO
-            i0 = (_d(p["ftp_rate_x_balance"]) / DAY_BASIS) if p else ZERO
-            r1 = (_d(c["ftp_rate_x_balance"]) / b1) if c and b1 else ZERO
-            r0 = (_d(p["ftp_rate_x_balance"]) / b0) if p and b0 else ZERO
+            #     dI = B1'*r1' - B0'*r0'
+            #        = r0'*dB' + B0'*dr' + dB'*dr'
+            # Using the rounded sum on one side and B'*r' on the other would
+            # leave a residual that looks like a modelling error but is just
+            # rounding.
+            i1 = _d(c["ftp_rate_x_balance_pd"]) if c else ZERO
+            i0 = _d(p["ftp_rate_x_balance_pd"]) if p else ZERO
+            r1 = (i1 / e1) if c and e1 else ZERO
+            r0 = (i0 / e0) if p and e0 else ZERO
 
-            db, dr = b1 - b0, r1 - r0
-            volume = (r0 * db) / DAY_BASIS
-            rate = (b0 * dr) / DAY_BASIS
-            inter = (db * dr) / DAY_BASIS
+            db, dr = e1 - e0, r1 - r0
+            volume = r0 * db
+            rate = e0 * dr
+            inter = db * dr
 
             tot_vol += volume
             tot_rate += rate
@@ -387,7 +395,6 @@ class AnalyticsRepo:
 
     def _segments(self, f: Filters, by: Dimension) -> list[dict]:
         """Segment totals including the weighted-rate component."""
-        from app.repositories.dashboard import _MEASURES
 
         if f.needs_fact_grain:
             col = self._fact_dimension(by)
@@ -396,7 +403,7 @@ class AnalyticsRepo:
                     .where(self.dash._fact_where(f)).group_by(col))
             out = []
             for r in self.s.execute(stmt):
-                row = {m: _d(getattr(r, m)) for m in _MEASURES}
+                row = {m: _d(getattr(r, m)) for m in ALL_MEASURES}
                 row["label"] = to_label(r[0])
                 row["account_count"] = r.account_count or 0
                 row["negative_ftp_count"] = r.negative_ftp_count or 0
@@ -411,7 +418,7 @@ class AnalyticsRepo:
 
         out = []
         for r in self.s.execute(stmt):
-            row = {m: _d(getattr(r, m)) for m in _MEASURES}
+            row = {m: _d(getattr(r, m)) for m in ALL_MEASURES}
             row["label"] = label_of(r)
             row["account_count"] = r.account_count or 0
             row["negative_ftp_count"] = r.negative_ftp_count or 0
@@ -456,29 +463,29 @@ class AnalyticsRepo:
 
         components = [
             {"key": "benchmark", "label": "Benchmark",
-             "amount": (_d(r.benchmark_contrib) / DAY_BASIS).quantize(MONEY_Q),
+             "amount": _d(r.benchmark_contrib_pd).quantize(MONEY_Q),
              "rate": band(_d(r.benchmark_contrib))},
             {"key": "customer_rate", "label": "Customer rate (ROI)",
-             "amount": (_d(r.roi_contrib) / DAY_BASIS).quantize(MONEY_Q),
+             "amount": _d(r.roi_contrib_pd).quantize(MONEY_Q),
              "rate": band(_d(r.roi_contrib))},
             {"key": "liquidity", "label": "Liquidity cost",
-             "amount": (_d(r.liquidity_contrib) / DAY_BASIS).quantize(MONEY_Q),
+             "amount": _d(r.liquidity_contrib_pd).quantize(MONEY_Q),
              "rate": band(_d(r.liquidity_contrib))},
             {"key": "other", "label": "Other cost",
-             "amount": (_d(r.other_contrib) / DAY_BASIS).quantize(MONEY_Q),
+             "amount": _d(r.other_contrib_pd).quantize(MONEY_Q),
              "rate": band(_d(r.other_contrib))},
         ]
-        net = (_d(r.ftp_rate_x_balance) / DAY_BASIS).quantize(MONEY_Q)
+        net = _d(r.ftp_rate_x_balance_pd).quantize(MONEY_Q)
         by_segment = None
         if by:
             by_segment = [
                 {
                     "label": seg["label"],
-                    "benchmark": (seg["benchmark_contrib"] / DAY_BASIS).quantize(MONEY_Q),
-                    "customer_rate": (seg["roi_contrib"] / DAY_BASIS).quantize(MONEY_Q),
-                    "liquidity": (seg["liquidity_contrib"] / DAY_BASIS).quantize(MONEY_Q),
-                    "other": (seg["other_contrib"] / DAY_BASIS).quantize(MONEY_Q),
-                    "net": (seg["ftp_rate_x_balance"] / DAY_BASIS).quantize(MONEY_Q),
+                    "benchmark": seg["benchmark_contrib_pd"].quantize(MONEY_Q),
+                    "customer_rate": seg["roi_contrib_pd"].quantize(MONEY_Q),
+                    "liquidity": seg["liquidity_contrib_pd"].quantize(MONEY_Q),
+                    "other": seg["other_contrib_pd"].quantize(MONEY_Q),
+                    "net": seg["ftp_rate_x_balance_pd"].quantize(MONEY_Q),
                 }
                 for seg in sorted(
                     self._segments(f, by),
@@ -1354,7 +1361,7 @@ class AnalyticsRepo:
 
         The identity is exact and falls straight out of the stored components::
 
-            NII              = SUM(roi_contrib) / 36500
+            NII              = SUM(roi_contrib / D)   D = the day's divisor
             business units   = NII + benchmark + liquidity + other contributions
             treasury retains = NII - business units
 
@@ -1367,9 +1374,9 @@ class AnalyticsRepo:
         interest_paid = _d(r.interest_payable)
         nii = interest_received - interest_paid
 
-        funding = _d(r.benchmark_contrib) / DAY_BASIS
-        liquidity = _d(r.liquidity_contrib) / DAY_BASIS
-        other = _d(r.other_contrib) / DAY_BASIS
+        funding = _d(r.benchmark_contrib_pd)
+        liquidity = _d(r.liquidity_contrib_pd)
+        other = _d(r.other_contrib_pd)
         lending = _d(r.asset_ftp_profit)
         deposit = _d(r.liability_ftp_profit)
         business_units = lending + deposit
@@ -1416,6 +1423,7 @@ class AnalyticsRepo:
                 select(
                     F.product_code,
                     func.sum(F.balance).label("balance"),
+                    func.sum(F.balance / F.day_divisor).label("balance_pd"),
                     func.sum(F.customer_interest).label("interest"),
                     func.sum(F.ftp_rate * F.balance).label("ftp_rate_x_balance"),
                     func.sum(F.ftp_income).label("ftp_profit"),
@@ -1434,6 +1442,8 @@ class AnalyticsRepo:
                         select(
                             m.product_code,
                             func.sum(m.liability_balance).label("balance"),
+                            func.sum(m.liability_balance / m.day_divisor)
+                                .label("balance_pd"),
                             func.sum(m.interest_payable).label("interest"),
                             func.sum(m.ftp_rate_x_balance).label("ftp_rate_x_balance"),
                             func.sum(m.net_ftp_profit).label("ftp_profit"),
@@ -1471,7 +1481,7 @@ class AnalyticsRepo:
                 "avg_balance": (bal / days).quantize(MONEY_Q) if days else ZERO,
                 "share_pct": rate(bal * 100, total_balance),
                 "interest_paid": paid.quantize(MONEY_Q),
-                "cost_pct": rate(paid * DAY_BASIS, bal),
+                "cost_pct": rate(paid, _d(r.balance_pd)),
                 "ftp_rate_pct": rate(_d(r.ftp_rate_x_balance), bal),
                 "ftp_profit": _d(r.ftp_profit).quantize(MONEY_Q),
             })
@@ -1483,7 +1493,8 @@ class AnalyticsRepo:
             "total": {
                 "avg_balance": (total_balance / days).quantize(MONEY_Q) if days else ZERO,
                 "interest_paid": total_paid.quantize(MONEY_Q),
-                "cost_pct": rate(total_paid * DAY_BASIS, total_balance),
+                "cost_pct": rate(total_paid,
+                                 sum((_d(r.balance_pd) for r in rows), ZERO)),
                 "ftp_rate_pct": rate(
                     sum((_d(r.ftp_rate_x_balance) for r in rows), ZERO), total_balance),
                 "ftp_profit": sum((_d(r.ftp_profit) for r in rows), ZERO).quantize(MONEY_Q),
@@ -1506,12 +1517,15 @@ class AnalyticsRepo:
         paid = _d(r.interest_payable)
         nii = received - paid
 
-        def annualised(amount: Decimal, base: Decimal) -> Decimal | None:
-            return (amount / base * DAY_BASIS).quantize(RATE_Q) if base else None
+        def annualised(amount: Decimal, base_pd: Decimal) -> Decimal | None:
+            """Money over the window as an annual % of the balance that earned
+            it; `base_pd` is balance-days each over its day's divisor."""
+            return (amount / base_pd).quantize(RATE_Q) if base_pd else None
 
-        yield_on_advances = annualised(received, assets)
-        cost_of_deposits = annualised(paid, liabs)
-        nim = annualised(nii, assets)
+        assets_pd = _d(r.asset_balance_pd)
+        yield_on_advances = annualised(received, assets_pd)
+        cost_of_deposits = annualised(paid, _d(r.liability_balance_pd))
+        nim = annualised(nii, assets_pd)
 
         # CASA needs the demand/time split, which lives on the product master.
         if f.needs_fact_grain:
@@ -1546,7 +1560,7 @@ class AnalyticsRepo:
                 if yield_on_advances is not None and cost_of_deposits is not None else None
             ),
             "nim_pct": nim,
-            "ftp_yield_pct": annualised(_d(r.net_ftp_profit), _d(r.total_balance)),
+            "ftp_yield_pct": annualised(_d(r.net_ftp_profit), _d(r.total_balance_pd)),
             #: Advances over deposits. Above 100% means the book is not funded
             #: by its own deposits and the shortfall is bought from treasury.
             "credit_deposit_ratio_pct": (
@@ -1589,7 +1603,7 @@ class AnalyticsRepo:
             column("pc", String), column("median_rate", Float), name="med",
         ).data(list(medians.items()) or [("", None)])
 
-        uplift = (med.c.median_rate - F.ftp_rate) * F.balance / DAY_BASIS
+        uplift = (med.c.median_rate - F.ftp_rate) * F.balance / F.day_divisor
         below = F.ftp_rate < med.c.median_rate
 
         per_product = self.s.execute(

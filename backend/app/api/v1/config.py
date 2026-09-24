@@ -176,6 +176,9 @@ class StaleDateOut(BaseModel):
     products: list[str]
     rows: int
     blocked_by: str | None
+    kept: bool
+    kept_by: str | None
+    kept_at: str | None
 
 
 class RecalculateRequest(BaseModel):
@@ -200,5 +203,15 @@ def recalculate_stale(body: RecalculateRequest, db: DbDep, user: UserDep):
     svc = RestatementService(db, actor_id=user.id, actor_username=user.username)
     try:
         return svc.recalculate(body.dates, reason=body.reason)
+    except RestatementError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+
+@router.post("/keep", dependencies=[_edit])
+def keep_stale(body: RecalculateRequest, db: DbDep, user: UserDep):
+    """Keep stale dates on their earlier rates; new uploads use the new ones."""
+    svc = RestatementService(db, actor_id=user.id, actor_username=user.username)
+    try:
+        return svc.keep(body.dates, reason=body.reason)
     except RestatementError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc

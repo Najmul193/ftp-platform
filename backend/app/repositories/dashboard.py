@@ -121,8 +121,27 @@ _MEASURES = (
 )
 
 
+#: Per-day measures: each source measure divided by that day's income divisor
+#: (36,500 for ACT/365, 36,000 for ACT/360) *before* summing. A `x_balance` or
+#: `contrib` measure becomes income; a balance becomes the base that annualises
+#: an income into a percentage (rate = income / balance_pd). Dividing each day
+#: by its own divisor is what keeps a window spanning a basis change exact; on
+#: a single basis they reduce to the familiar `SUM(x) / 36500`.
+_PER_DAY = (
+    "ftp_rate_x_balance", "roi_x_balance",
+    "benchmark_contrib", "roi_contrib", "liquidity_contrib", "other_contrib",
+    "asset_balance", "liability_balance", "total_balance",
+)
+PER_DAY_MEASURES = tuple(f"{m}_pd" for m in _PER_DAY)
+#: Every additive measure the helpers below return.
+ALL_MEASURES = _MEASURES + PER_DAY_MEASURES
+
+
 def _sums(model: Any) -> list:
     return [func.coalesce(func.sum(getattr(model, m)), 0).label(m) for m in _MEASURES] + [
+        func.coalesce(func.sum(getattr(model, m) / model.day_divisor), 0).label(f"{m}_pd")
+        for m in _PER_DAY
+    ] + [
         func.coalesce(func.sum(model.account_count), 0).label("account_count"),
         func.coalesce(func.sum(model.negative_ftp_count), 0).label("negative_ftp_count"),
     ]
@@ -148,21 +167,36 @@ def _fact_sums() -> list:
                      else_=-F.benchmark_rate * F.balance)
     signed_roi = case((F.side == liab, -F.normalized_roi * F.balance),
                       else_=F.normalized_roi * F.balance)
+    # (per-row value, row filter) for each measure that has a per-day form.
+    per_row = {
+        "roi_x_balance": (F.normalized_roi * F.balance, None),
+        "ftp_rate_x_balance": (F.ftp_rate * F.balance, None),
+        "benchmark_contrib": (signed_bm, None),
+        "roi_contrib": (signed_roi, None),
+        "liquidity_contrib": (-F.liquidity_cost * F.balance, None),
+        "other_contrib": (-F.other_cost * F.balance, None),
+        "asset_balance": (F.balance, F.side == asset),
+        "liability_balance": (F.balance, F.side == liab),
+        "total_balance": (F.balance, None),
+    }
+
+    def total(expr, where, label):
+        agg = func.sum(expr)
+        if where is not None:
+            agg = agg.filter(where)
+        return func.coalesce(agg, 0).label(label)
+
     return [
-        func.coalesce(func.sum(F.balance).filter(F.side == asset), 0).label("asset_balance"),
-        func.coalesce(func.sum(F.balance).filter(F.side == liab), 0).label("liability_balance"),
-        func.coalesce(func.sum(F.customer_interest).filter(F.side == asset), 0).label("interest_receivable"),
-        func.coalesce(func.sum(F.customer_interest).filter(F.side == liab), 0).label("interest_payable"),
-        func.coalesce(func.sum(F.asset_ftp_profit), 0).label("asset_ftp_profit"),
-        func.coalesce(func.sum(F.liability_ftp_profit), 0).label("liability_ftp_profit"),
-        func.coalesce(func.sum(F.ftp_income), 0).label("net_ftp_profit"),
-        func.coalesce(func.sum(F.normalized_roi * F.balance), 0).label("roi_x_balance"),
-        func.coalesce(func.sum(F.ftp_rate * F.balance), 0).label("ftp_rate_x_balance"),
-        func.coalesce(func.sum(signed_bm), 0).label("benchmark_contrib"),
-        func.coalesce(func.sum(signed_roi), 0).label("roi_contrib"),
-        func.coalesce(func.sum(-F.liquidity_cost * F.balance), 0).label("liquidity_contrib"),
-        func.coalesce(func.sum(-F.other_cost * F.balance), 0).label("other_contrib"),
-        func.coalesce(func.sum(F.balance), 0).label("total_balance"),
+        total(F.balance, F.side == asset, "asset_balance"),
+        total(F.balance, F.side == liab, "liability_balance"),
+        total(F.customer_interest, F.side == asset, "interest_receivable"),
+        total(F.customer_interest, F.side == liab, "interest_payable"),
+        total(F.asset_ftp_profit, None, "asset_ftp_profit"),
+        total(F.liability_ftp_profit, None, "liability_ftp_profit"),
+        total(F.ftp_income, None, "net_ftp_profit"),
+        *(total(e, w, m) for m, (e, w) in per_row.items()
+          if m not in ("asset_balance", "liability_balance")),
+        *(total(e / F.day_divisor, w, f"{m}_pd") for m, (e, w) in per_row.items()),
         func.count().label("account_count"),
         func.coalesce(func.count().filter(F.negative_ftp_flag.is_(True)), 0).label("negative_ftp_count"),
     ]
