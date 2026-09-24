@@ -46,6 +46,7 @@ DEFAULT_PATHS = [
     # Daily
     "/analytics/watchlist", "/analytics/nii-reconciliation", "/analytics/banking-ratios",
     "/analytics/period-summary", "/analytics/repricing", "/analytics/deposit-cost",
+    "/analytics/advance-yield",
     # Analytics
     "/analytics/rate-distribution?buckets=12", "/analytics/leakage",
     # Accounts / Consolidated
@@ -70,7 +71,8 @@ DIVISION_PATHS = [
     "/dashboard/kpis", "/dashboard/by-branch", "/dashboard/by-product",
     "/dashboard/by-district", "/dashboard/trend", "/analytics/summary",
     "/analytics/watchlist", "/analytics/repricing", "/analytics/banking-ratios",
-    "/analytics/deposit-cost", "/analytics/nii-reconciliation",
+    "/analytics/deposit-cost", "/analytics/advance-yield",
+    "/analytics/nii-reconciliation",
     "/analytics/period-summary", "/analytics/rate-distribution?buckets=12",
 ]
 

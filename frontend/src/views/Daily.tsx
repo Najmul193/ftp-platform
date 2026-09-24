@@ -18,6 +18,7 @@ export default function Daily() {
   const periods = useAsync(() => api.periodSummary(filters), [filters]);
   const repricing = useAsync(() => api.repricing(filters), [filters]);
   const depositCost = useAsync(() => api.depositCost(filters), [filters]);
+  const advanceYield = useAsync(() => api.advanceYield(filters), [filters]);
   const summary = useAsync(() => api.summary(filters), [filters]);
 
   // -- acknowledged watchlist items ---------------------------------------- #
@@ -57,6 +58,14 @@ export default function Daily() {
     ...dc.products,
     { ...dc.total, product_code: "Total", short_name: "All deposit products",
       liability_nature: null, avg_accounts: String(dc.products.reduce((a, p) => a + n(p.avg_accounts), 0)),
+      share_pct: "100", is_total: true },
+  ];
+  const ay = advanceYield.data;
+  type AyRow = NonNullable<typeof ay>["products"][number] & { is_total?: boolean };
+  const ayRows: AyRow[] = !ay?.products.length ? [] : [
+    ...ay.products,
+    { ...ay.total, product_code: "Total", short_name: "All loan products",
+      avg_accounts: String(ay.products.reduce((a, p) => a + n(p.avg_accounts), 0)),
       share_pct: "100", is_total: true },
   ];
   const neg = (v: unknown) => n(v) < 0 ? { color: "var(--delta-down)" } : undefined;
@@ -164,6 +173,46 @@ export default function Daily() {
                 ? "advances exceed deposits" : "self-funded"}
               tone={n(r?.credit_deposit_ratio_pct) > 100 ? "bad" : "good"} />
       </Grid>
+
+      {/* --- yield on advances, product by product --- */}
+      <Card title="Yield on advances by product"
+            subtitle={ay?.days
+              ? `Annualised; balances averaged over ${ay.days} day${ay.days === 1 ? "" : "s"} · click a product to filter the page`
+              : undefined}
+            footnote="Yield on advances is interest received over loan balance, annualised on the same basis as the tile above, so the total row equals it. FTP rate is the spread each product keeps after treasury charges it for funding; a negative figure means the product earns less than its funding costs.">
+        {advanceYield.error ? <Empty title="Could not load" hint={advanceYield.error} />
+          : (
+            <Table rows={ayRows}
+                   csvName="ftp-yield-on-advances-by-product.csv"
+                   onRowClick={(x) => { if (!x.is_total) setFilters((f) => ({ ...f, product_code: [x.product_code] })); }}
+                   empty="No loan products in this selection."
+                   cols={[
+                     { key: "p", label: "Product",
+                       render: (x) => x.is_total ? <b>Total</b>
+                         : <span><b>{x.product_code}</b>{" "}
+                             <span style={{ color: "var(--text-muted)" }}>{x.short_name}</span></span>,
+                       value: (x) => x.product_code },
+                     { key: "a", label: "Accounts", align: "right",
+                       render: (x) => n(x.avg_accounts).toLocaleString(undefined, { maximumFractionDigits: 0 }),
+                       value: (x) => x.avg_accounts },
+                     { key: "b", label: "Avg balance", align: "right",
+                       render: (x) => compact(x.avg_balance), value: (x) => x.avg_balance },
+                     { key: "s", label: "Share", align: "right",
+                       render: (x) => pct(x.share_pct, 1), value: (x) => x.share_pct },
+                     { key: "y", label: "Yield on advances", align: "right",
+                       render: (x) => x.is_total ? <b>{pct(x.yield_pct, 2)}</b> : pct(x.yield_pct, 2),
+                       value: (x) => x.yield_pct },
+                     { key: "i", label: "Interest received", align: "right",
+                       render: (x) => money(x.interest_received), value: (x) => x.interest_received },
+                     { key: "r", label: "FTP rate", align: "right",
+                       render: (x) => <span style={neg(x.ftp_rate_pct)}>{pct(x.ftp_rate_pct, 2)}</span>,
+                       value: (x) => x.ftp_rate_pct },
+                     { key: "f", label: "FTP profit", align: "right",
+                       render: (x) => <span style={neg(x.ftp_profit)}>{money(x.ftp_profit)}</span>,
+                       value: (x) => x.ftp_profit },
+                   ]} />
+          )}
+      </Card>
 
       {/* --- cost of deposits, product by product --- */}
       <Card title="Cost of deposits by product"

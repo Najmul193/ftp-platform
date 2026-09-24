@@ -169,6 +169,12 @@ def deposit_cost(db: DbDep, scope: ScopeDep, f: FiltersDep):
     return AnalyticsRepo(db, scope).deposit_cost_by_product(f)
 
 
+@router.get("/advance-yield", dependencies=[_view])
+def advance_yield(db: DbDep, scope: ScopeDep, f: FiltersDep):
+    """Yield on advances per asset product; reconciles to the bank ratio."""
+    return AnalyticsRepo(db, scope).advance_yield_by_product(f)
+
+
 @router.get("/repricing", dependencies=[_view])
 def repricing(db: DbDep, scope: ScopeDep, f: FiltersDep,
               limit: int = Query(25, ge=1, le=200)):

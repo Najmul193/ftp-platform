@@ -1415,6 +1415,18 @@ class AnalyticsRepo:
         Balances and account counts are averaged over the days in the window;
         rates are annualised from balance-days, exactly as the ratio is.
         """
+        return self._rate_by_product(f, Side.LIABILITY, "interest_paid", "cost_pct")
+
+    @cached
+    def advance_yield_by_product(self, f: Filters) -> dict[str, Any]:
+        """Yield on advances per asset product, on the same slice and basis as
+        the bank-level `yield_on_advances_pct`, so the rows reconcile to it."""
+        return self._rate_by_product(f, Side.ASSET, "interest_received", "yield_pct")
+
+    def _rate_by_product(self, f: Filters, side: Side,
+                         interest_key: str, rate_key: str) -> dict[str, Any]:
+        """Customer interest per product on one side of the book, annualised
+        over balance-days the way `banking_ratios` annualises the bank total."""
         from app.models import Product
 
         if f.needs_fact_grain:
@@ -1431,25 +1443,27 @@ class AnalyticsRepo:
                     func.count(F.business_date.distinct()).label("days"),
                 )
                 .where(self.dash._fact_where(f))
-                .where(F.side == Side.LIABILITY)
+                .where(F.side == side)
                 .group_by(F.product_code)
             ).all()
         else:
             m = AggDailyBranchProduct
+            balance = m.liability_balance if side == Side.LIABILITY else m.asset_balance
+            interest = (m.interest_payable if side == Side.LIABILITY
+                        else m.interest_receivable)
             rows = self.s.execute(
                 _apply_filters(
                     _apply_scope(
                         select(
                             m.product_code,
-                            func.sum(m.liability_balance).label("balance"),
-                            func.sum(m.liability_balance / m.day_divisor)
-                                .label("balance_pd"),
-                            func.sum(m.interest_payable).label("interest"),
+                            func.sum(balance).label("balance"),
+                            func.sum(balance / m.day_divisor).label("balance_pd"),
+                            func.sum(interest).label("interest"),
                             func.sum(m.ftp_rate_x_balance).label("ftp_rate_x_balance"),
                             func.sum(m.net_ftp_profit).label("ftp_profit"),
                             func.sum(m.account_count).label("account_days"),
                             func.count(m.business_date.distinct()).label("days"),
-                        ).where(m.side == Side.LIABILITY),
+                        ).where(m.side == side),
                         m, self.dash._scope_for(f),
                     ), m, f,
                 ).group_by(m.product_code)
@@ -1469,7 +1483,7 @@ class AnalyticsRepo:
 
         out = []
         for r in sorted(rows, key=lambda r: _d(r.balance), reverse=True):
-            bal, paid = _d(r.balance), _d(r.interest)
+            bal, interest_amt = _d(r.balance), _d(r.interest)
             p = products.get(r.product_code)
             out.append({
                 "product_code": r.product_code,
@@ -1480,21 +1494,21 @@ class AnalyticsRepo:
                                 if days else ZERO,
                 "avg_balance": (bal / days).quantize(MONEY_Q) if days else ZERO,
                 "share_pct": rate(bal * 100, total_balance),
-                "interest_paid": paid.quantize(MONEY_Q),
-                "cost_pct": rate(paid, _d(r.balance_pd)),
+                interest_key: interest_amt.quantize(MONEY_Q),
+                rate_key: rate(interest_amt, _d(r.balance_pd)),
                 "ftp_rate_pct": rate(_d(r.ftp_rate_x_balance), bal),
                 "ftp_profit": _d(r.ftp_profit).quantize(MONEY_Q),
             })
 
-        total_paid = sum((_d(r.interest) for r in rows), ZERO)
+        total_interest = sum((_d(r.interest) for r in rows), ZERO)
         return {
             "days": days,
             "products": out,
             "total": {
                 "avg_balance": (total_balance / days).quantize(MONEY_Q) if days else ZERO,
-                "interest_paid": total_paid.quantize(MONEY_Q),
-                "cost_pct": rate(total_paid,
-                                 sum((_d(r.balance_pd) for r in rows), ZERO)),
+                interest_key: total_interest.quantize(MONEY_Q),
+                rate_key: rate(total_interest,
+                               sum((_d(r.balance_pd) for r in rows), ZERO)),
                 "ftp_rate_pct": rate(
                     sum((_d(r.ftp_rate_x_balance) for r in rows), ZERO), total_balance),
                 "ftp_profit": sum((_d(r.ftp_profit) for r in rows), ZERO).quantize(MONEY_Q),
