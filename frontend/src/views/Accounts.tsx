@@ -229,7 +229,7 @@ export default function Accounts() {
 
       {/* ---- pricing risk, cut whichever way the reader needs ------------ */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <span style={{ fontSize: "var(--fs-sm)", color: "var(--text-muted)", fontWeight: 600,
+        <span style={{ fontSize: "var(--fs-sm)", color: "var(--text-secondary)", fontWeight: 600,
                        letterSpacing: ".05em", textTransform: "uppercase" }}>
           Break down by
         </span>

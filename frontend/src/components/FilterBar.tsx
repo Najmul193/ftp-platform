@@ -90,7 +90,7 @@ export default function FilterBar({ collapsed = false }: { collapsed?: boolean }
 
   return (
     <div className="filter-panel" style={{
-      borderTop: "1px solid var(--border)",
+      background: "var(--surface-2)", borderTop: "1px solid var(--border)",
       padding: "12px 16px 14px", position: "sticky",
       top: "env(safe-area-inset-top, 0px)", zIndex: 20,
     }}>

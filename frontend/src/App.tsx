@@ -141,7 +141,11 @@ function Shell() {
         <Sidebar items={visible} view={view} rail={!navOpen} />
       )}
 
-      <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+      {/* --nav-w tells the viewport-anchored canvas art where the page starts. */}
+      <main className="canvas-art" style={{
+        flex: 1, minWidth: 0, display: "flex", flexDirection: "column",
+        "--nav-w": narrow ? "0px" : navOpen ? "240px" : "64px",
+      } as React.CSSProperties}>
         <div className="masthead" style={{
           position: "sticky", top: "env(safe-area-inset-top, 0px)", zIndex: 30,
           borderBottom: "1px solid var(--border)",
@@ -498,8 +502,8 @@ function Login() {
   };
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column",
-                  background: "var(--page)" }}>
+    <div className="canvas-art" style={{ minHeight: "100vh", display: "flex",
+                                         flexDirection: "column" }}>
       <div style={{ flex: 1, display: "grid", placeItems: "center", padding: "36px 20px 60px" }}>
         <div style={{ width: "min(400px, 100%)", display: "flex", flexDirection: "column" }}>
           {/* Brand */}

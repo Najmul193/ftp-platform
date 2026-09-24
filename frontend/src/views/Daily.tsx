@@ -353,7 +353,7 @@ export default function Daily() {
       </Grid>
 
       {summary.data?.comparison && (
-        <p style={{ margin: 0, fontSize: "var(--fs-sm)", color: "var(--text-muted)", textAlign: "center" }}>
+        <p style={{ margin: 0, fontSize: "var(--fs-sm)", color: "var(--text-secondary)", textAlign: "center" }}>
           {summary.data.comparison.prior_has_data
             ? `Comparing ${longDate(summary.data.comparison.current_period.start)} – ` +
               `${longDate(summary.data.comparison.current_period.end)} against the ` +

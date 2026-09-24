@@ -78,9 +78,9 @@
   --shadow-sm: 0 1px 2px rgba(16,24,40,.05);
   --shadow-md: 0 1px 3px rgba(16,24,40,.08), 0 1px 2px rgba(16,24,40,.04);
   --shadow:    var(--shadow-sm);
-  --print:     url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27200%27%20height%3D%2756%27%3E%3Cg%20fill%3D%27%232f35a8%27%20font-family%3D%27Georgia%2CTimes%20New%20Roman%2Cserif%27%20font-size%3D%2716%27%20font-weight%3D%27600%27%20text-anchor%3D%27middle%27%3E%3Ctext%20x%3D%2720%27%20y%3D%2720%27%3E%E0%A7%B3%3C%2Ftext%3E%3Ctext%20x%3D%2760%27%20y%3D%2720%27%3E%24%3C%2Ftext%3E%3Ctext%20x%3D%27100%27%20y%3D%2720%27%3E%E2%82%AC%3C%2Ftext%3E%3Ctext%20x%3D%27140%27%20y%3D%2720%27%3E%C2%A3%3C%2Ftext%3E%3Ctext%20x%3D%27180%27%20y%3D%2720%27%3E%C2%A5%3C%2Ftext%3E%3Ctext%20x%3D%270%27%20y%3D%2748%27%3E%E2%82%AC%3C%2Ftext%3E%3Ctext%20x%3D%2740%27%20y%3D%2748%27%3E%C2%A3%3C%2Ftext%3E%3Ctext%20x%3D%2780%27%20y%3D%2748%27%3E%C2%A5%3C%2Ftext%3E%3Ctext%20x%3D%27120%27%20y%3D%2748%27%3E%E0%A7%B3%3C%2Ftext%3E%3Ctext%20x%3D%27160%27%20y%3D%2748%27%3E%24%3C%2Ftext%3E%3Ctext%20x%3D%27200%27%20y%3D%2748%27%3E%E2%82%AC%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fsvg%3E");
-  --print-opacity: .13;
   --scrim:     rgba(16,24,40,.45);
+  --art-contour: url(/canvas-contour-light.svg);
+  --art-dots:    url(/canvas-dots-light.svg);
 
   /* Scale */
   --radius:    12px;
@@ -138,9 +138,9 @@
   --shadow-sm: inset 0 1px 0 rgba(255,255,255,.04), 0 1px 2px rgba(0,0,0,.4);
   --shadow-md: inset 0 1px 0 rgba(255,255,255,.04), 0 4px 16px rgba(0,0,0,.45);
   --shadow: var(--shadow-sm);
-  --print: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27200%27%20height%3D%2756%27%3E%3Cg%20fill%3D%27%23c9cbf8%27%20font-family%3D%27Georgia%2CTimes%20New%20Roman%2Cserif%27%20font-size%3D%2716%27%20font-weight%3D%27600%27%20text-anchor%3D%27middle%27%3E%3Ctext%20x%3D%2720%27%20y%3D%2720%27%3E%E0%A7%B3%3C%2Ftext%3E%3Ctext%20x%3D%2760%27%20y%3D%2720%27%3E%24%3C%2Ftext%3E%3Ctext%20x%3D%27100%27%20y%3D%2720%27%3E%E2%82%AC%3C%2Ftext%3E%3Ctext%20x%3D%27140%27%20y%3D%2720%27%3E%C2%A3%3C%2Ftext%3E%3Ctext%20x%3D%27180%27%20y%3D%2720%27%3E%C2%A5%3C%2Ftext%3E%3Ctext%20x%3D%270%27%20y%3D%2748%27%3E%E2%82%AC%3C%2Ftext%3E%3Ctext%20x%3D%2740%27%20y%3D%2748%27%3E%C2%A3%3C%2Ftext%3E%3Ctext%20x%3D%2780%27%20y%3D%2748%27%3E%C2%A5%3C%2Ftext%3E%3Ctext%20x%3D%27120%27%20y%3D%2748%27%3E%E0%A7%B3%3C%2Ftext%3E%3Ctext%20x%3D%27160%27%20y%3D%2748%27%3E%24%3C%2Ftext%3E%3Ctext%20x%3D%27200%27%20y%3D%2748%27%3E%E2%82%AC%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fsvg%3E");
-  --print-opacity: .10;
   --scrim: rgba(0,0,0,.6);
+  --art-contour: url(/canvas-contour-dark.svg);
+  --art-dots:    url(/canvas-dots-dark.svg);
   }
 }
 :root[data-theme="dark"] {
@@ -181,9 +181,9 @@
   --shadow-sm: inset 0 1px 0 rgba(255,255,255,.04), 0 1px 2px rgba(0,0,0,.4);
   --shadow-md: inset 0 1px 0 rgba(255,255,255,.04), 0 4px 16px rgba(0,0,0,.45);
   --shadow: var(--shadow-sm);
-  --print: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27200%27%20height%3D%2756%27%3E%3Cg%20fill%3D%27%23c9cbf8%27%20font-family%3D%27Georgia%2CTimes%20New%20Roman%2Cserif%27%20font-size%3D%2716%27%20font-weight%3D%27600%27%20text-anchor%3D%27middle%27%3E%3Ctext%20x%3D%2720%27%20y%3D%2720%27%3E%E0%A7%B3%3C%2Ftext%3E%3Ctext%20x%3D%2760%27%20y%3D%2720%27%3E%24%3C%2Ftext%3E%3Ctext%20x%3D%27100%27%20y%3D%2720%27%3E%E2%82%AC%3C%2Ftext%3E%3Ctext%20x%3D%27140%27%20y%3D%2720%27%3E%C2%A3%3C%2Ftext%3E%3Ctext%20x%3D%27180%27%20y%3D%2720%27%3E%C2%A5%3C%2Ftext%3E%3Ctext%20x%3D%270%27%20y%3D%2748%27%3E%E2%82%AC%3C%2Ftext%3E%3Ctext%20x%3D%2740%27%20y%3D%2748%27%3E%C2%A3%3C%2Ftext%3E%3Ctext%20x%3D%2780%27%20y%3D%2748%27%3E%C2%A5%3C%2Ftext%3E%3Ctext%20x%3D%27120%27%20y%3D%2748%27%3E%E0%A7%B3%3C%2Ftext%3E%3Ctext%20x%3D%27160%27%20y%3D%2748%27%3E%24%3C%2Ftext%3E%3Ctext%20x%3D%27200%27%20y%3D%2748%27%3E%E2%82%AC%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fsvg%3E");
-  --print-opacity: .10;
   --scrim: rgba(0,0,0,.6);
+  --art-contour: url(/canvas-contour-dark.svg);
+  --art-dots:    url(/canvas-dots-dark.svg);
 }
 
 * { box-sizing: border-box; }
@@ -274,29 +274,28 @@ a { color: var(--accent); }
 :root[data-theme="dark"] .logo-light { display: none; }
 :root[data-theme="dark"] .logo-dark { display: block; }
 
-/* Top bar: printed with a faint brick grid of currency symbols (taka, dollar,
- * euro, pound, yen), like a cash wrapper. It fades out towards the middle so
- * it reads as texture at the edges and never sits behind the controls. */
-.masthead { position: relative; background: var(--chrome); }
-.masthead::before {
-  content: "";
-  position: absolute; inset: 0;
-  background-image: var(--print);
-  background-size: 200px 56px;
-  opacity: var(--print-opacity);
-  /* Full strength at the edges, easing to about a third behind the middle,
-   * so the print is always there without competing with the controls. */
-  -webkit-mask-image: linear-gradient(90deg, #000 0, rgba(0,0,0,.35) 40%, rgba(0,0,0,.35) 60%, #000 100%);
-          mask-image: linear-gradient(90deg, #000 0, rgba(0,0,0,.35) 40%, rgba(0,0,0,.35) 60%, #000 100%);
-  pointer-events: none;
+.masthead { background: var(--chrome); }
+
+/* Canvas art, after Oracle Redwood: two organic shapes filled with hand-drawn
+ * "data textures" -- contour grain in the brand indigo, dots and pebbles in the
+ * brand green -- anchored to the viewport corners and bleeding off them. They
+ * frame the page; the middle stays plain and the cards scroll over them.
+ * Drawn by frontend/scripts/make_canvas_art.py. As a background of <main> the
+ * art can never paint over the sidebar. iOS ignores `fixed` and scrolls it. */
+.canvas-art {
+  background:
+    var(--art-contour) right -140px top 40px / 780px auto no-repeat fixed,
+    var(--art-dots) left calc(var(--nav-w, 0px) - 90px) bottom -50px / 600px auto no-repeat fixed,
+    var(--page);
 }
-/* The filter panel is part of the header: tint it rather than paint over the
- * print, so the print runs behind the fields too. Fields keep their solid
- * surface, so what you read and type stays on plain ground. */
-.masthead .filter-panel {
-  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+@media (max-width: 720px) {
+  .canvas-art {
+    background:
+      var(--art-contour) right -160px top 60px / 460px auto no-repeat fixed,
+      var(--art-dots) left -70px bottom -40px / 360px auto no-repeat fixed,
+      var(--page);
+  }
 }
-.masthead > * { position: relative; }
 
 /* -- Navigation ----------------------------------------------------------- */
 
