@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.domain.types import LiabilityNature, Side
 from app.models import (
-    BankDailyAccountData, FtpCalculationResult, Product, ProductRateConfig,
+    BankDailyAccountData, FtpCalculationResult, Product, ProductRateConfig, User,
 )
 from app.services import audit
 from app.services.config import GlobalConfigService
@@ -182,32 +182,42 @@ class ProductService:
     def set_rate(self, code: str, *, benchmark_rate: Decimal | str,
                  liquidity_cost: Decimal | str | None = None,
                  other_cost: Decimal | str | None = None,
-                 effective_from: date | None = None) -> ProductRateConfig:
-        """Add a new effective-dated rate version, closing the previous one.
+                 effective_from: date | None = None,
+                 note: str | None = None) -> ProductRateConfig:
+        """Add a new effective-dated rate version from a date onwards.
 
-        Closing the open period rather than overwriting it is what keeps every
-        historical figure explainable: the row that priced last month still
-        points at the version that was in force then.
+        Nothing is overwritten. The version in force on the start date is
+        closed there, so the row that priced last month still points at the
+        version that was in force then. A version that would start on or after
+        the new date -- a backdated change landing before the latest version --
+        is marked SUPERSEDED rather than deleted: it stays in the history, it
+        just no longer prices anything. Days already uploaded from the start
+        date are then reported for recalculation, never restated silently.
         """
         product = self.get(code)
         start = effective_from or date.today()
 
-        current = self.s.scalar(
-            select(ProductRateConfig)
-            .where(ProductRateConfig.product_id == product.id)
-            .where(ProductRateConfig.status == "APPROVED")
-            .where(ProductRateConfig.effective_to.is_(None))
-            .order_by(ProductRateConfig.version.desc())
-        )
-        version = 1
-        if current:
-            if current.effective_from >= start:
-                raise ProductError(
-                    f"a rate already applies from {current.effective_from}; "
-                    f"the new one must start after that"
-                )
-            current.effective_to = start
-            version = current.version + 1
+        C = ProductRateConfig
+        approved = list(self.s.scalars(
+            select(C).where(C.product_id == product.id)
+            .where(C.status == "APPROVED")
+            .order_by(C.effective_from)
+        ))
+        superseded = [c for c in approved if c.effective_from >= start]
+        for c in superseded:
+            c.status = "SUPERSEDED"
+            c.updated_by = self.actor_id
+        for c in approved:
+            if c.effective_from < start and (c.effective_to is None
+                                             or c.effective_to > start):
+                c.effective_to = start
+                c.updated_by = self.actor_id
+        # The exclusion constraint checks APPROVED periods as rows change; the
+        # retired and shortened versions must be written before the new one.
+        self.s.flush()
+
+        version = (self.s.scalar(
+            select(func.max(C.version)).where(C.product_id == product.id)) or 0) + 1
 
         cfg = ProductRateConfig(
             product_id=product.id, version=version,
@@ -216,17 +226,74 @@ class ProductService:
                             if liquidity_cost is not None else None),
             other_cost=(Decimal(str(other_cost)) if other_cost is not None else None),
             effective_from=start, status="APPROVED", maker_id=self.actor_id,
+            note=note or None, created_by=self.actor_id,
         )
         self.s.add(cfg)
         self.s.flush()
         audit.record(
             self.s, action="UPDATE", entity_type="product_rate_config",
             entity_id=f"{code}#v{version}",
+            before=({"superseded_versions": [c.version for c in superseded]}
+                    if superseded else None),
             after={"benchmark_rate": str(benchmark_rate),
-                   "effective_from": start.isoformat(), "version": version},
+                   "liquidity_cost": (str(liquidity_cost)
+                                      if liquidity_cost is not None else None),
+                   "other_cost": str(other_cost) if other_cost is not None else None,
+                   "effective_from": start.isoformat(), "version": version,
+                   "note": note or None},
             actor_user_id=self.actor_id, actor_username=self.actor_username,
         )
         return cfg
+
+    def rate_history(self, code: str | None = None,
+                     limit: int = 500) -> list[dict[str, Any]]:
+        """Every product rate version, newest first within each product.
+
+        Nothing is ever overwritten -- `set_rate` closes the open version and
+        adds the next -- so this is the complete record of what applied when.
+        `rows_priced` counts the current fact rows each version priced; runs do
+        not record a product version, so the facts are counted directly.
+        """
+        P, C = Product, ProductRateConfig
+        stmt = (
+            select(P.product_code, P.short_name, C, User.username)
+            .join(C, C.product_id == P.id)
+            .outerjoin(User, User.id == C.maker_id)
+            .order_by(P.product_code, C.effective_from.desc(), C.version.desc())
+            .limit(limit)
+        )
+        if code is not None:
+            stmt = stmt.where(P.product_code == self.get(code).product_code)
+        rows = self.s.execute(stmt).all()
+
+        F = FtpCalculationResult
+        priced_stmt = (
+            select(F.product_code, F.product_config_version, func.count())
+            .where(F.is_current.is_(True))
+            .where(F.product_config_version.is_not(None))
+            .group_by(F.product_code, F.product_config_version)
+        )
+        if code is not None:
+            priced_stmt = priced_stmt.where(F.product_code == code)
+        priced = {(c, v): n for c, v, n in self.s.execute(priced_stmt)}
+
+        return [
+            {
+                "product_code": pc, "short_name": name,
+                "version": cfg.version,
+                "benchmark_rate": cfg.benchmark_rate,
+                "liquidity_cost": cfg.liquidity_cost,
+                "other_cost": cfg.other_cost,
+                "effective_from": cfg.effective_from,
+                "effective_to": cfg.effective_to,
+                "status": cfg.status,
+                "changed_by": username,
+                "changed_at": cfg.created_at,
+                "note": cfg.note,
+                "rows_priced": priced.get((pc, cfg.version), 0),
+            }
+            for pc, name, cfg, username in rows
+        ]
 
     def deactivate(self, code: str) -> Product:
         return self.update(code, is_active=False)

@@ -25,6 +25,9 @@ from app.models import GlobalRateConfig
 from app.services.config import (
     ConfigError, ConfigInUse, GlobalConfigService,
 )
+from app.services.restatement import (
+    RestatementError, RestatementService, stale_dates,
+)
 
 router = APIRouter(prefix="/config", tags=["config"])
 
@@ -55,6 +58,8 @@ class GlobalConfigOut(BaseModel):
     day_count_basis: DayCountBasis
     effective_from: date
     effective_to: date | None
+    #: APPROVED, or SUPERSEDED once a backdated version replaced it.
+    status: str
     note: str | None
     #: Completed runs and rows this version priced. Non-zero runs means an
     #: in-place correction is refused, which is how the UI decides which of the
@@ -74,10 +79,12 @@ def _out(svc: GlobalConfigService, cfg: GlobalRateConfig) -> GlobalConfigOut:
         day_count_basis=cfg.day_count_basis,
         effective_from=cfg.effective_from,
         effective_to=cfg.effective_to,
+        status=cfg.status,
         note=cfg.note,
         runs_priced=runs,
         rows_priced=rows,
-        editable_in_place=runs == 0 and cfg.effective_to is None,
+        editable_in_place=(runs == 0 and cfg.effective_to is None
+                           and cfg.status == "APPROVED"),
     )
 
 
@@ -162,3 +169,36 @@ def correct_global(body: GlobalConfigUpdate, db: DbDep, user: UserDep):
     except ConfigError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
     return _out(svc, cfg)
+
+
+class StaleDateOut(BaseModel):
+    business_date: date
+    products: list[str]
+    rows: int
+    blocked_by: str | None
+
+
+class RecalculateRequest(BaseModel):
+    dates: list[date] = Field(min_length=1)
+    reason: str | None = None
+
+
+@router.get("/stale-dates", response_model=list[StaleDateOut],
+            dependencies=[_view])
+def list_stale_dates(db: DbDep, user: UserDep):
+    """Uploaded dates whose figures were priced on since-superseded rates.
+
+    A rate version opened with a past effective date does not reprice days
+    already uploaded; this is where those days surface.
+    """
+    return [StaleDateOut(**vars(s)) for s in stale_dates(db)]
+
+
+@router.post("/recalculate", dependencies=[_edit])
+def recalculate_stale(body: RecalculateRequest, db: DbDep, user: UserDep):
+    """Restate stale dates on the rates now in force. Never runs on its own."""
+    svc = RestatementService(db, actor_id=user.id, actor_username=user.username)
+    try:
+        return svc.recalculate(body.dates, reason=body.reason)
+    except RestatementError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc

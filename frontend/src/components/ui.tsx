@@ -305,26 +305,72 @@ export interface Col<T> {
 
 export function Table<T>({
   cols, rows, empty = "No data for this selection.", maxHeight, csvName, onRowClick,
+  search, searchPlaceholder = "Search…",
 }: {
   cols: Col<T>[]; rows: T[]; empty?: string; maxHeight?: number;
   csvName?: string; onRowClick?: (row: T) => void;
+  /**
+   * Adds a search box that filters rows as you type. Returns the text a row
+   * can be found by; every word typed must appear in it, in any order, so a
+   * code and part of a name can be combined ("tdr 6", "gulshan corp").
+   */
+  search?: (row: T) => string;
+  searchPlaceholder?: string;
 }) {
+  const [query, setQuery] = useState("");
+
   if (!rows.length) {
     return <p style={{ padding: "18px 4px", color: "var(--text-muted)", fontSize: 13, margin: 0 }}>
       {empty}
     </p>;
   }
+
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const shown = search && terms.length
+    ? rows.filter((r) => {
+        const text = search(r).toLowerCase();
+        return terms.every((t) => text.includes(t));
+      })
+    : rows;
+
   return (
     <>
-      {csvName && (
-        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 6 }}>
-          <MiniButton onClick={() => toCsv(
-            rows.map((r) => Object.fromEntries(
-              cols.map((c) => [c.label, c.value ? c.value(r) : (r as never)[c.key]]),
-            )), csvName,
-          )}>Export CSV</MiniButton>
+      {(csvName || search) && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6,
+                      flexWrap: "wrap" }}>
+          {search && (
+            <div style={{ position: "relative", flex: "1 1 220px", maxWidth: 340 }}>
+              <input type="search" value={query} placeholder={searchPlaceholder}
+                     aria-label={searchPlaceholder}
+                     onChange={(e) => setQuery(e.target.value)}
+                     onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); }}
+                     style={{
+                       width: "100%", background: "var(--surface-1)",
+                       border: "1px solid var(--border-strong)", borderRadius: 7,
+                       padding: "6px 9px", fontSize: 12.5, color: "var(--text-primary)",
+                     }} />
+            </div>
+          )}
+          {search && terms.length > 0 && (
+            <span style={{ fontSize: 11.5, color: "var(--text-muted)" }}>
+              {shown.length.toLocaleString("en-IN")} of {rows.length.toLocaleString("en-IN")}
+            </span>
+          )}
+          {csvName && (
+            <MiniButton style={{ marginLeft: "auto" }} onClick={() => toCsv(
+              shown.map((r) => Object.fromEntries(
+                cols.map((c) => [c.label, c.value ? c.value(r) : (r as never)[c.key]]),
+              )), csvName,
+            )}>Export CSV</MiniButton>
+          )}
         </div>
       )}
+      {!shown.length && (
+        <p style={{ padding: "18px 4px", color: "var(--text-muted)", fontSize: 13, margin: 0 }}>
+          Nothing matches “{query.trim()}”.
+        </p>
+      )}
+      {shown.length > 0 && (
       <div style={{ overflowX: "auto", maxHeight, overflowY: maxHeight ? "auto" : undefined }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
           <thead>
@@ -343,7 +389,7 @@ export function Table<T>({
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => (
+            {shown.map((r, i) => (
               <tr key={i}
                   onClick={onRowClick ? () => onRowClick(r) : undefined}
                   style={{
@@ -363,6 +409,7 @@ export function Table<T>({
           </tbody>
         </table>
       </div>
+      )}
     </>
   );
 }

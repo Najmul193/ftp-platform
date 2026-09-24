@@ -189,6 +189,18 @@ export const api = {
     request<{ product_code: string; version: number; benchmark_rate: string;
               effective_from: string }>(
       `/products/${code}/rates`, { method: "POST", body: JSON.stringify(b) }),
+  /** Every product rate version, superseded ones included; one product or all. */
+  productRateHistory: (code?: string, limit = 500) =>
+    request<ProductRateVersion[]>(
+      `/products/${code ? `${code}/` : ""}rates/history${qs({}, { limit })}`),
+  /** Uploaded dates still priced on rates that a backdated change superseded. */
+  staleDates: () => request<StaleDate[]>("/config/stale-dates"),
+  /** Restate those dates on the rates now in force. */
+  recalculateDates: (dates: string[], reason?: string) =>
+    request<{ run_ref: string; dates_recalculated: string[]; rows: number }>(
+      "/config/recalculate", {
+        method: "POST", body: JSON.stringify({ dates, reason }),
+      }),
 
   // --- audit trail --------------------------------------------------------
   auditLog: (f: AuditFilters = {}) =>
@@ -449,6 +461,8 @@ export interface GlobalConfig {
   day_count_basis: DayCountBasis;
   effective_from: string;
   effective_to: string | null;
+  /** APPROVED, or SUPERSEDED once a backdated version replaced it. */
+  status: string;
   note: string | null;
   /** Completed runs and rows this version priced. Non-zero runs is why the UI
    *  offers a new version rather than an in-place correction. */
@@ -482,6 +496,33 @@ export interface ProductRateUpdate {
   liquidity_cost?: string | null;
   other_cost?: string | null;
   effective_from?: string;
+  note?: string | null;
+}
+
+/** One effective-dated product rate version. `null` liquidity or other cost
+ *  means the version inherits the global default. */
+export interface ProductRateVersion {
+  product_code: string;
+  short_name: string;
+  version: number;
+  benchmark_rate: Num | null;
+  liquidity_cost: Num | null;
+  other_cost: Num | null;
+  effective_from: string;
+  effective_to: string | null;
+  status: string;
+  changed_by: string | null;
+  changed_at: string | null;
+  note: string | null;
+  rows_priced: number;
+}
+
+export interface StaleDate {
+  business_date: string;
+  products: string[];
+  rows: number;
+  /** Set when the rates for the date cannot be resolved at all. */
+  blocked_by: string | null;
 }
 
 export interface AuditFilters {

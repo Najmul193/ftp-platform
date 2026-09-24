@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   api, GlobalConfig, GlobalConfigUpdate, Product, ProductRates,
+  ProductRateVersion, StaleDate,
 } from "../api";
 import { Button, Card, Grid, MiniButton, Pill, Table } from "../components/ui";
-import { longDate, rate } from "../format";
+import { longDate, rate, shortDate } from "../format";
 import { useApp, useAsync } from "../state";
 
 const BASES = ["ACT_365", "ACT_360"] as const;
@@ -16,6 +17,10 @@ const label: React.CSSProperties = {
   fontSize: 10.5, fontWeight: 600, letterSpacing: ".05em",
   textTransform: "uppercase", color: "var(--text-muted)",
   marginBottom: 4, display: "block",
+};
+
+const hint: React.CSSProperties = {
+  fontSize: 11, color: "var(--text-muted)", margin: "4px 0 0", lineHeight: 1.4,
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -35,8 +40,23 @@ export default function Rates() {
   const [message, setMessage] =
     useState<{ tone: "good" | "critical"; text: string } | null>(null);
 
+  const [historyProduct, setHistoryProduct] = useState("");
+  const globalFormRef = useRef<HTMLDivElement | null>(null);
+  const productFormRef = useRef<HTMLDivElement | null>(null);
+
+  // The forms open below their tables: pull the viewport down to the one just
+  // opened so it is on screen instead of silently appearing off-screen.
+  useEffect(() => {
+    const target = editingProduct ? productFormRef.current
+      : editing ? globalFormRef.current : null;
+    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [editing, editingProduct]);
+  const [recalculating, setRecalculating] = useState(false);
+
   const current = useAsync(() => api.globalConfig(), [refresh]);
   const history = useAsync(() => api.globalConfigHistory(50), [refresh]);
+  const productHistory = useAsync(() => api.productRateHistory(), [refresh]);
+  const stale = useAsync(() => api.staleDates(), [refresh]);
 
   // Five products, so five requests is cheaper than a new endpoint. If the
   // product master grows past a screenful this wants a batch route.
@@ -58,6 +78,37 @@ export default function Rates() {
 
   const cfg = current.data;
 
+  const productHistoryRows = (productHistory.data ?? []).filter(
+    (h) => !historyProduct || h.product_code === historyProduct);
+  const historyProducts = [...new Set(
+    (productHistory.data ?? []).map((h) => h.product_code))];
+
+  // A backdated rate change does not reprice days already uploaded. Those days
+  // are listed here until someone chooses to restate them.
+  const staleDates: StaleDate[] = stale.data ?? [];
+  const recalculable = staleDates.filter((d) => !d.blocked_by);
+
+  async function recalculate() {
+    const dates = recalculable.map((d) => d.business_date);
+    if (!window.confirm(
+      `Recalculate ${dates.length} uploaded ${dates.length === 1 ? "day" : "days"} `
+      + `on the rates now in force?\n\n${dates.map(longDate).join(", ")}\n\n`
+      + "The current figures for these days are replaced. The previous "
+      + "figures are kept as superseded and the run is recorded in the audit log.",
+    )) return;
+    setRecalculating(true);
+    setMessage(null);
+    try {
+      const out = await api.recalculateDates(dates, "Backdated rate change");
+      setMessage({ tone: "good", text:
+        `${out.dates_recalculated.map(shortDate).join(", ")} recalculated `
+        + `(${out.rows.toLocaleString("en-IN")} rows, run ${out.run_ref}).` });
+      reload();
+    } catch (e) {
+      setMessage({ tone: "critical", text: (e as Error).message });
+    } finally { setRecalculating(false); }
+  }
+
   // A product benchmark always overrides the global one, so these are the
   // products that depend on the global benchmark being set. An unresolved row
   // (no rate at all) counts the same as one inheriting the global default.
@@ -76,6 +127,38 @@ export default function Rates() {
         }}>
           <Pill tone={message.tone}>{message.tone === "good" ? "Done" : "Refused"}</Pill>
           <span style={{ marginLeft: 8, color: "var(--text-secondary)" }}>{message.text}</span>
+        </div>
+      )}
+
+      {staleDates.length > 0 && (
+        <div style={{
+          padding: "10px 12px", borderRadius: 8, fontSize: 13,
+          border: "1px solid var(--status-warning)", background: "var(--surface-2)",
+          display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+        }}>
+          <Pill tone="warning">Needs recalculation</Pill>
+          <span style={{ flex: "1 1 320px", color: "var(--text-secondary)",
+                         lineHeight: 1.5 }}>
+            <b style={{ color: "var(--text-primary)" }}>
+              Rates changed for days already uploaded:{" "}
+              {staleDates.map((d) => shortDate(d.business_date)).join(", ")}
+            </b>
+            {" "}({[...new Set(staleDates.flatMap((d) => d.products))].join(", ")};{" "}
+            {staleDates.reduce((a, d) => a + d.rows, 0).toLocaleString("en-IN")} rows).
+            {" "}These days still show figures from the old rates.
+            {staleDates.some((d) => d.blocked_by) && (
+              <span style={{ color: "var(--status-critical)" }}>
+                {" "}Rates cannot be resolved for{" "}
+                {staleDates.filter((d) => d.blocked_by)
+                  .map((d) => shortDate(d.business_date)).join(", ")}.
+              </span>
+            )}
+          </span>
+          {can("CONFIG_RATE_EDIT") && recalculable.length > 0 && (
+            <Button variant="primary" onClick={recalculate} disabled={recalculating}>
+              {recalculating ? "Recalculating…" : "Recalculate now"}
+            </Button>
+          )}
         </div>
       )}
 
@@ -125,14 +208,18 @@ export default function Rates() {
       </Card>
 
       {editing && cfg && editable && (
+        <div ref={globalFormRef}
+             style={{ scrollMarginTop: 24, scrollSnapMarginTop: 24 }}>
         <GlobalForm
           mode={editing}
           cfg={cfg}
+          versions={(history.data ?? []).filter((h) => h.status === "APPROVED")}
           dependsOnGlobalBenchmark={dependsOnGlobalBenchmark}
           onCancel={() => setEditing(null)}
           onSaved={(text) => { setMessage({ tone: "good", text }); reload(); }}
           onError={(text) => setMessage({ tone: "critical", text })}
         />
+        </div>
       )}
 
       <Card title="Effective rates by product"
@@ -141,6 +228,8 @@ export default function Rates() {
         <Table
           rows={productRates.data ?? []}
           csvName="effective-rates.csv"
+          searchPlaceholder="Search product code or short name…"
+          search={({ p }) => [p.product_code, p.short_name, p.side].join(" ")}
           empty={productRates.error ?? "No active products."}
           cols={[
             { key: "code", label: "Product",
@@ -166,33 +255,120 @@ export default function Rates() {
                 ? <span>{rate(r.other_cost, 4)} <Source source={r.other_source} /></span>
                 : "—",
               value: ({ r }) => r?.other_cost ?? "" },
-            ...(can("CONFIG_RATE_EDIT") ? [{
+            {
               key: "act", label: "", align: "right" as const,
               render: ({ p }: { p: Product; r: ProductRates | null }) => (
-                <MiniButton onClick={() => {
-                  setEditingProduct(p); setEditing(null); setMessage(null);
-                }}>Set rates</MiniButton>
+                <span style={{ display: "inline-flex", gap: 6 }}>
+                  <MiniButton onClick={() => {
+                    setHistoryProduct(p.product_code);
+                    document.getElementById("product-rate-history")
+                      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }}>History</MiniButton>
+                  {can("CONFIG_RATE_EDIT") && (
+                    <MiniButton onClick={() => {
+                      setEditingProduct(p); setEditing(null); setMessage(null);
+                    }}>Set rates</MiniButton>
+                  )}
+                </span>
               ),
-            }] : []),
+            },
           ]}
         />
       </Card>
 
       {editingProduct && can("CONFIG_RATE_EDIT") && (
+        <div ref={productFormRef}
+             style={{ scrollMarginTop: 24, scrollSnapMarginTop: 24 }}>
         <ProductRateForm
           product={editingProduct}
           rates={productRates.data?.find(
             (x) => x.p.product_code === editingProduct.product_code)?.r ?? null}
+          versions={(productHistory.data ?? []).filter((h) =>
+            h.product_code === editingProduct.product_code && h.status === "APPROVED")}
           onCancel={() => setEditingProduct(null)}
           onSaved={(text) => { setMessage({ tone: "good", text }); reload(); }}
           onError={(text) => setMessage({ tone: "critical", text })}
         />
+        </div>
       )}
+
+      <div id="product-rate-history"
+           style={{ scrollMarginTop: 24, scrollSnapMarginTop: 24 }}>
+      <Card title="Product rate history"
+            subtitle={`${productHistoryRows.length} versions`
+                      + (historyProduct ? ` for ${historyProduct}` : " across all products")}
+            actions={
+              <select style={{ ...field, width: "auto" }} value={historyProduct}
+                      aria-label="Filter by product"
+                      onChange={(e) => setHistoryProduct(e.target.value)}>
+                <option value="">All products</option>
+                {historyProducts.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            }
+            footnote="Every rate change adds a version and closes the previous one; nothing is overwritten. Rows priced counts the current figures each version produced.">
+        <Table rows={productHistoryRows} csvName="product-rate-history.csv"
+               searchPlaceholder="Search product, short name, user or note…"
+               search={(h) => [
+                 h.product_code, h.short_name, `v${h.version}`, h.changed_by, h.note,
+                 h.status === "SUPERSEDED" ? "superseded"
+                   : h.effective_to ? "" : "in force",
+               ].join(" ")}
+               empty={productHistory.error ?? "No product rate versions."}
+               cols={[
+                 { key: "p", label: "Product",
+                   render: (h: ProductRateVersion) => <b>{h.product_code}</b>,
+                   value: (h: ProductRateVersion) => h.product_code },
+                 { key: "v", label: "Version", render: (h) => `v${h.version}`,
+                   value: (h) => h.version },
+                 { key: "from", label: "Effective from",
+                   render: (h) => longDate(h.effective_from),
+                   value: (h) => h.effective_from },
+                 { key: "to", label: "Until",
+                   render: (h) => h.status === "SUPERSEDED"
+                     ? <Pill tone="neutral">superseded</Pill>
+                     : h.effective_to
+                       ? longDate(h.effective_to)
+                       : <Pill tone="good">in force</Pill>,
+                   value: (h) => h.status === "SUPERSEDED"
+                     ? "superseded" : h.effective_to ?? "" },
+                 { key: "bm", label: "Benchmark", align: "right",
+                   render: (h) => h.benchmark_rate === null ? "global" : rate(h.benchmark_rate, 4),
+                   value: (h) => h.benchmark_rate ?? "" },
+                 { key: "lq", label: "Liquidity", align: "right",
+                   render: (h) => h.liquidity_cost === null
+                     ? <span style={{ color: "var(--text-muted)" }}>global</span>
+                     : rate(h.liquidity_cost, 4),
+                   value: (h) => h.liquidity_cost ?? "global" },
+                 { key: "oc", label: "Other", align: "right",
+                   render: (h) => h.other_cost === null
+                     ? <span style={{ color: "var(--text-muted)" }}>global</span>
+                     : rate(h.other_cost, 4),
+                   value: (h) => h.other_cost ?? "global" },
+                 { key: "by", label: "Changed by", render: (h) => h.changed_by ?? "—",
+                   value: (h) => h.changed_by ?? "" },
+                 { key: "at", label: "Changed on",
+                   render: (h) => h.changed_at ? longDate(h.changed_at.slice(0, 10)) : "—",
+                   value: (h) => h.changed_at ?? "" },
+                 { key: "rows", label: "Rows priced", align: "right",
+                   render: (h) => h.rows_priced.toLocaleString("en-IN"),
+                   value: (h) => h.rows_priced },
+                 { key: "note", label: "Note",
+                   render: (h) => <span style={{ color: "var(--text-muted)" }}>{h.note}</span>,
+                   value: (h) => h.note ?? "" },
+               ]} />
+      </Card>
+      </div>
 
       <Card title="Global version history"
             subtitle={`${history.data?.length ?? 0} versions`}
             footnote="Superseded versions are retained rather than overwritten, so past figures remain traceable to the rates that produced them.">
         <Table rows={history.data ?? []} csvName="global-rate-history.csv"
+               searchPlaceholder="Search version or note…"
+               search={(h) => [
+                 `v${h.version}`, h.note, h.day_count_basis.replace("_", "/"),
+                 h.status === "SUPERSEDED" ? "superseded"
+                   : h.effective_to ? "" : "in force",
+               ].join(" ")}
                empty={history.error ?? "No configuration versions."}
                cols={[
                  { key: "v", label: "Version", render: (h) => <b>v{h.version}</b>,
@@ -201,10 +377,13 @@ export default function Rates() {
                    render: (h) => longDate(h.effective_from),
                    value: (h) => h.effective_from },
                  { key: "to", label: "Until",
-                   render: (h) => h.effective_to
-                     ? longDate(h.effective_to)
-                     : <Pill tone="good">in force</Pill>,
-                   value: (h) => h.effective_to ?? "" },
+                   render: (h) => h.status === "SUPERSEDED"
+                     ? <Pill tone="neutral">superseded</Pill>
+                     : h.effective_to
+                       ? longDate(h.effective_to)
+                       : <Pill tone="good">in force</Pill>,
+                   value: (h) => h.status === "SUPERSEDED"
+                     ? "superseded" : h.effective_to ?? "" },
                  { key: "bm", label: "Benchmark", align: "right",
                    render: (h) => h.benchmark_rate === null ? "—" : rate(h.benchmark_rate, 4),
                    value: (h) => h.benchmark_rate ?? "" },
@@ -255,10 +434,12 @@ function Field({ name, value, hint }: { name: string; value: string; hint?: stri
 }
 
 function GlobalForm({
-  mode, cfg, dependsOnGlobalBenchmark, onCancel, onSaved, onError,
+  mode, cfg, versions, dependsOnGlobalBenchmark, onCancel, onSaved, onError,
 }: {
   mode: "version" | "correct";
   cfg: GlobalConfig;
+  /** Approved versions, to warn which a backdated date would supersede. */
+  versions: GlobalConfig[];
   /** Products with no benchmark of their own, which a NULL global would leave
    *  unpriceable. Checked here so the refusal is not a round trip. */
   dependsOnGlobalBenchmark: string[];
@@ -278,9 +459,6 @@ function GlobalForm({
 
   const correcting = mode === "correct";
   const wouldBreak = noBenchmark ? dependsOnGlobalBenchmark : [];
-  // The new version must start after the current one, which is what keeps the
-  // periods non-overlapping. Flagged here so the refusal is not a round trip.
-  const dateTooEarly = !correcting && from <= cfg.effective_from;
 
   async function save() {
     setSaving(true);
@@ -320,13 +498,7 @@ function GlobalForm({
           <div>
             <label style={label} htmlFor="g-from">Effective from</label>
             <input id="g-from" type="date" style={field} value={from}
-                   min={cfg.effective_from}
                    onChange={(e) => setFrom(e.target.value)} />
-            {dateTooEarly && (
-              <div style={{ fontSize: 11, color: "var(--status-critical)", marginTop: 4 }}>
-                Must be later than {longDate(cfg.effective_from)}.
-              </div>
-            )}
           </div>
         )}
         <div>
@@ -390,13 +562,19 @@ function GlobalForm({
         </div>
       )}
 
+      {!correcting && (
+        <BackdateNotice from={from} versions={versions.map((v) => ({
+          version: v.version, effective_from: v.effective_from,
+          label: `liquidity ${rate(v.liquidity_cost, 2)} %, other ${rate(v.other_cost, 2)} %`,
+        }))} />
+      )}
       <div style={{ display: "flex", gap: 8, marginTop: 14, alignItems: "center" }}>
         <Button variant="primary" onClick={save}
-                disabled={saving || dateTooEarly || !liquidity || !other
+                disabled={saving || !from || !liquidity || !other
                           || wouldBreak.length > 0
                           || (!noBenchmark && !bench)}>
           {saving ? "Saving…" : correcting
-            ? `Correct v${cfg.version}` : `Create v${cfg.version + 1}`}
+            ? `Correct v${cfg.version}` : "Save new version"}
         </Button>
         <Button onClick={onCancel}>Cancel</Button>
       </div>
@@ -404,25 +582,31 @@ function GlobalForm({
   );
 }
 
-function ProductRateForm({ product, rates, onCancel, onSaved, onError }: {
+function ProductRateForm({ product, rates, versions, onCancel, onSaved, onError }: {
   product: Product;
   rates: ProductRates | null;
+  /** The product's approved versions, to warn which a backdated date replaces. */
+  versions: ProductRateVersion[];
   onCancel: () => void;
   onSaved: (msg: string) => void;
   onError: (msg: string) => void;
 }) {
-  const inherited = useMemo(() => ({
-    liquidity: rates?.liquidity_source === "GLOBAL_DEFAULT",
-    other: rates?.other_source === "GLOBAL_DEFAULT",
+  // What the product does today, only to say so when the form would change it.
+  const ownToday = useMemo(() => ({
+    liquidity: rates?.liquidity_source === "PRODUCT_OVERRIDE",
+    other: rates?.other_source === "PRODUCT_OVERRIDE",
   }), [rates]);
 
   const [bench, setBench] = useState(
     rates?.benchmark_rate == null ? "" : String(rates.benchmark_rate));
-  const [liqOverride, setLiqOverride] = useState(!inherited.liquidity);
-  const [othOverride, setOthOverride] = useState(!inherited.other);
+  // Inheriting the global default is the norm, so a new version inherits
+  // unless the user deliberately unticks the box and enters a product value.
+  const [liqOverride, setLiqOverride] = useState(false);
+  const [othOverride, setOthOverride] = useState(false);
   const [liquidity, setLiquidity] = useState(String(rates?.liquidity_cost ?? ""));
   const [other, setOther] = useState(String(rates?.other_cost ?? ""));
   const [from, setFrom] = useState(today());
+  const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
 
   async function save() {
@@ -434,6 +618,7 @@ function ProductRateForm({ product, rates, onCancel, onSaved, onError }: {
         liquidity_cost: liqOverride ? liquidity : null,
         other_cost: othOverride ? other : null,
         effective_from: from,
+        note: note.trim() || null,
       });
       onSaved(`${product.product_code} rates version ${out.version} effective `
               + `from ${longDate(out.effective_from)}.`);
@@ -467,6 +652,11 @@ function ProductRateForm({ product, rates, onCancel, onSaved, onError }: {
                    onChange={(e) => setLiqOverride(!e.target.checked)} />
             Inherit the global default
           </label>
+          {!liqOverride && ownToday.liquidity && (
+            <p style={hint}>
+              Replaces this product's own {rate(rates?.liquidity_cost, 4)} %.
+            </p>
+          )}
         </div>
         <div>
           <label style={label} htmlFor="pr-oth">Other cost %</label>
@@ -480,16 +670,76 @@ function ProductRateForm({ product, rates, onCancel, onSaved, onError }: {
                    onChange={(e) => setOthOverride(!e.target.checked)} />
             Inherit the global default
           </label>
+          {!othOverride && ownToday.other && (
+            <p style={hint}>
+              Replaces this product's own {rate(rates?.other_cost, 4)} %.
+            </p>
+          )}
         </div>
       </Grid>
+      <div style={{ marginTop: 12 }}>
+        <label style={label} htmlFor="pr-note">Reason / note</label>
+        <input id="pr-note" style={field} value={note} maxLength={500}
+               onChange={(e) => setNote(e.target.value)}
+               placeholder="e.g. Board-approved benchmark revision" />
+      </div>
+      <BackdateNotice from={from} versions={versions.map((v) => ({
+        version: v.version, effective_from: v.effective_from,
+        label: `benchmark ${rate(v.benchmark_rate, 2)} %`,
+      }))} />
       <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
         <Button variant="primary" onClick={save}
-                disabled={saving || !bench || (liqOverride && !liquidity)
+                disabled={saving || !from || !bench || (liqOverride && !liquidity)
                           || (othOverride && !other)}>
           {saving ? "Saving…" : "Save new version"}
         </Button>
         <Button onClick={onCancel}>Cancel</Button>
       </div>
     </Card>
+  );
+}
+
+/** What saving a version from `from` will do to the ones already in place.
+ *
+ * A date on or before an existing version's start supersedes it: kept in the
+ * history, no longer in force. A past date leaves days already uploaded on the
+ * old rates until someone recalculates them from the banner on this page. */
+function BackdateNotice({ from, versions }: {
+  from: string;
+  versions: { version: number; effective_from: string; label: string }[];
+}) {
+  if (!from) return null;
+  const replaced = versions.filter((v) => v.effective_from >= from)
+    .sort((a, b) => a.effective_from.localeCompare(b.effective_from));
+  const past = from < today();
+  if (!replaced.length && !past) return null;
+  return (
+    <div style={{
+      marginTop: 12, padding: "9px 11px", borderRadius: 8, fontSize: 12.5,
+      border: "1px solid var(--status-warning)", background: "var(--surface-2)",
+      color: "var(--text-secondary)", lineHeight: 1.55,
+    }}>
+      <Pill tone="warning">Backdated change</Pill>
+      {replaced.length > 0 && (
+        <div style={{ marginTop: 6 }}>
+          This replaces{" "}
+          {replaced.map((v, i) => (
+            <span key={v.version}>
+              {i > 0 && (i === replaced.length - 1 ? " and " : ", ")}
+              <b>v{v.version}</b> ({v.label} from {longDate(v.effective_from)})
+            </span>
+          ))}
+          . {replaced.length === 1 ? "It stays" : "They stay"} in the history marked
+          superseded.
+        </div>
+      )}
+      {past && (
+        <div style={{ marginTop: 6 }}>
+          Days already uploaded from {longDate(from)} keep their current figures
+          until recalculated. After saving they are listed at the top of this page
+          with a <b>Recalculate now</b> button.
+        </div>
+      )}
+    </div>
   );
 }

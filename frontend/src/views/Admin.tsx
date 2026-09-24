@@ -107,10 +107,17 @@ export default function Admin() {
             )}
             footnote="A branch with history cannot be deleted: every fact row carries its code, so removing it would orphan published figures. Deactivation retires it while keeping the audit trail intact.">
         <Table rows={branches.data ?? []} csvName="branch-master.csv"
+               searchPlaceholder="Search code, branch, district or category…"
+               search={(b) => [
+                 b.branch_code, b.branch_name,
+                 districts.find((x) => x.id === b.district_id)?.name,
+                 b.category.replace("_", " "), b.is_active ? "active" : "inactive",
+               ].join(" ")}
                cols={[
                  { key: "c", label: "Code", render: (b) => <b>{b.branch_code}</b>,
                    value: (b) => b.branch_code },
-                 { key: "n", label: "Name", render: (b) => b.branch_name },
+                 { key: "n", label: "Name", render: (b) => b.branch_name,
+                   value: (b) => b.branch_name },
                  { key: "d", label: "District",
                    render: (b) => districts.find((x) => x.id === b.district_id)?.name ?? "—",
                    value: (b) => b.district_id },
@@ -172,10 +179,16 @@ export default function Admin() {
             )}
             footnote="Rates are not held here. They live in effective-dated configuration so a rate change can be approved without re-approving the product. Delete is only possible before the feed references the code; after that, deactivate.">
         <Table rows={products.data ?? []} csvName="product-master.csv"
+               searchPlaceholder="Search code, short name, side or details…"
+               search={(p) => [
+                 p.product_code, p.short_name, p.side, p.liability_nature,
+                 p.details, p.is_active ? "active" : "inactive",
+               ].join(" ")}
                cols={[
                  { key: "c", label: "Code", render: (p) => <b>{p.product_code}</b>,
                    value: (p) => p.product_code },
-                 { key: "n", label: "Short name", render: (p) => p.short_name },
+                 { key: "n", label: "Short name", render: (p) => p.short_name,
+                   value: (p) => p.short_name },
                  { key: "s", label: "Side",
                    render: (p) => <Pill tone={p.side === "ASSET" ? "info" : "neutral"}>
                      {p.side}</Pill>, value: (p) => p.side },

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -80,10 +80,46 @@ class RateUpdate(BaseModel):
     liquidity_cost: Decimal | None = None
     other_cost: Decimal | None = None
     effective_from: date | None = None
+    note: str | None = Field(default=None, max_length=500)
+
+
+class ProductRateVersionOut(BaseModel):
+    product_code: str
+    short_name: str
+    version: int
+    benchmark_rate: Decimal | None
+    #: None means the component inherits the global default.
+    liquidity_cost: Decimal | None
+    other_cost: Decimal | None
+    effective_from: date
+    effective_to: date | None
+    status: str
+    changed_by: str | None
+    changed_at: datetime | None
+    note: str | None
+    rows_priced: int
 
 
 def _svc(db, user: UserDep) -> ProductService:
     return ProductService(db, actor_id=user.id, actor_username=user.username)
+
+
+@router.get("/rates/history", response_model=list[ProductRateVersionOut],
+            dependencies=[Depends(require("CONFIG_RATE_VIEW"))])
+def all_rate_history(db: DbDep, limit: int = 500):
+    """Every product rate version, including superseded ones."""
+    return ProductService(db).rate_history(limit=limit)
+
+
+@router.get("/{product_code}/rates/history",
+            response_model=list[ProductRateVersionOut],
+            dependencies=[Depends(require("CONFIG_RATE_VIEW"))])
+def product_rate_history(product_code: str, db: DbDep, limit: int = 500):
+    """One product's rate versions, newest first."""
+    try:
+        return ProductService(db).rate_history(product_code, limit=limit)
+    except ProductError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
 
 
 @router.post("", response_model=ProductOut, status_code=status.HTTP_201_CREATED,

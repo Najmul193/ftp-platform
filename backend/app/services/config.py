@@ -219,30 +219,40 @@ class GlobalConfigService:
 
     def set_rates(self, *, effective_from: date | None = None,
                   note: str | None = None, **changes: Any) -> GlobalRateConfig:
-        """Open a new effective-dated version, closing the current one.
+        """Open a new effective-dated version from a date onwards.
 
         Closing rather than overwriting is what keeps a historical figure
         explainable: the fact row that priced in March still points at the
-        version that was in force in March.
+        version that was in force in March. A version that would start on or
+        after the new date -- a backdated change landing before the latest
+        version -- is marked SUPERSEDED, kept in the history but no longer in
+        force. Days already uploaded are then reported for recalculation.
         """
         start = effective_from or date.today()
         current = self.open_version()
         values = self._resolve(current, changes)
         self._assert_benchmark_resolvable(values, start)
 
-        version = 1
-        before = None
-        if current is not None:
-            if current.effective_from >= start:
-                raise ConfigError(
-                    f"Version {current.version} already applies from "
-                    f"{current.effective_from.isoformat()}. A new version must "
-                    f"start after that date."
-                )
-            before = snapshot(current)
-            current.effective_to = start
-            current.updated_by = self.actor_id
-            version = current.version + 1
+        before = snapshot(current) if current is not None else None
+
+        G = GlobalRateConfig
+        approved = list(self.s.scalars(
+            select(G).where(G.status == "APPROVED").order_by(G.effective_from)))
+        superseded = [c for c in approved if c.effective_from >= start]
+        for c in superseded:
+            c.status = "SUPERSEDED"
+            c.updated_by = self.actor_id
+        for c in approved:
+            if c.effective_from < start and (c.effective_to is None
+                                             or c.effective_to > start):
+                c.effective_to = start
+                c.updated_by = self.actor_id
+        # Written before the new row so the no-overlap constraint sees them.
+        self.s.flush()
+
+        if before is not None and superseded:
+            before["superseded_versions"] = [c.version for c in superseded]
+        version = (self.s.scalar(select(func.max(G.version))) or 0) + 1
 
         cfg = GlobalRateConfig(
             version=version,
