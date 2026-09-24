@@ -93,7 +93,7 @@ export default function ProfitSummary({
             data: bars.map((x) => x.liability),
             itemStyle: { color: t.series[2], borderColor: t.surface, borderWidth: 2 },
             label: { show: true, position: "right", color: t.textSecondary,
-                     fontSize: 10.5,
+                     fontSize: 11,
                      formatter: (p: { dataIndex: number }) => compact(bars[p.dataIndex].net) } },
         ]
       : [
@@ -103,7 +103,7 @@ export default function ProfitSummary({
               borderRadius: [0, 4, 4, 0],
             },
             label: { show: true, position: "right", color: t.textSecondary,
-                     fontSize: 10.5,
+                     fontSize: 11,
                      formatter: (p: { value: number }) => compact(p.value) } },
         ];
 
@@ -207,9 +207,7 @@ export default function ProfitSummary({
               value={query}
               onChange={(e) => { setQuery(e.target.value); setPage(0); }}
               placeholder={`Find a ${unitLabel}…`}
-              style={{ background: "var(--surface-1)", borderRadius: 6,
-                       border: "1px solid var(--border-strong)",
-                       padding: "3px 8px", fontSize: 11.5, width: 150 }} />
+              style={{ minHeight: 28, fontSize: "var(--fs-sm)", width: 150 }} />
           )}
         </div>
       }
@@ -227,7 +225,7 @@ export default function ProfitSummary({
                    ariaLabel={`Net FTP profit by ${unitLabel}`} />
           )}
           {tail > 0 && (
-            <p style={{ margin: "4px 4px 8px", fontSize: 11.5,
+            <p style={{ margin: "4px 4px 8px", fontSize: "var(--fs-sm)",
                         color: "var(--text-muted)" }}>
               Chart shows the top {CHART_LIMIT} of {ranked.length}. The other{" "}
               {tail} {plural(unitLabel, tail)} total{tail === 1 ? "s" : ""}{" "}
@@ -240,7 +238,7 @@ export default function ProfitSummary({
           <div style={{ display: "flex", justifyContent: "space-between",
                         alignItems: "center", gap: 10, margin: "10px 2px 4px",
                         flexWrap: "wrap" }}>
-            <span style={{ fontSize: 11.5, color: "var(--text-muted)" }}>
+            <span style={{ fontSize: "var(--fs-sm)", color: "var(--text-muted)" }}>
               {query
                 ? `${filtered.length} of ${ranked.length} ${plural(unitLabel, ranked.length)} match`
                 : `${ranked.length} ${plural(unitLabel, ranked.length)}`}
@@ -276,7 +274,7 @@ export default function ProfitSummary({
 
           <div style={{ display: "flex", justifyContent: "space-between",
                         borderTop: "1px solid var(--border)", marginTop: 10,
-                        paddingTop: 8, fontSize: 12.5,
+                        paddingTop: 8, fontSize: "var(--fs-base)",
                         // Clear the full-screen toggle, which floats over this
                         // corner and was covering the last digits of the total.
                         paddingRight: TOGGLE_GUTTER }}>

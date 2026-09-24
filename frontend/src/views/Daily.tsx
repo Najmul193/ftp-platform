@@ -98,14 +98,9 @@ export default function Daily() {
                 (ackedCount ? ` · ${ackedCount} acknowledged` : "")
               : undefined}
             actions={ackedCount > 0
-              ? <button onClick={restore} title="Bring all acknowledged items back"
-                        style={{
-                          border: "none", background: "transparent",
-                          color: "var(--text-secondary)", fontSize: 12,
-                          cursor: "pointer", padding: "4px 8px", borderRadius: 6,
-                        }}>
+              ? <MiniButton onClick={restore} title="Bring all acknowledged items back">
                   Restore {ackedCount}
-                </button>
+                </MiniButton>
               : undefined}
             footnote="Ordered by money at stake rather than by rule, so the largest exposure reads first. Acknowledge an item once and it stays hidden for you until it changes.">
         {!watch.data?.items.length
@@ -118,38 +113,32 @@ export default function Daily() {
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {visibleItems.map((item, i) => (
                 <div key={i} style={{
-                  display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 10,
-                  alignItems: "start", padding: "9px 11px", borderRadius: 8,
-                  background: "var(--surface-2)",
+                  display: "flex", flexWrap: "wrap", gap: "8px 12px",
+                  alignItems: "center", padding: "10px 12px", borderRadius: "var(--radius-sm)",
+                  background: "var(--surface-2)", border: "1px solid var(--border)",
                   borderLeft: `3px solid ${
                     item.severity === "critical" || item.severity === "serious"
                       ? "var(--status-critical)"
                       : item.severity === "warning" ? "var(--status-warning)"
-                      : "var(--series-1)"}`,
+                      : "var(--accent)"}`,
                 }}>
                   <Pill tone={toneOf(item.severity)}>{item.severity}</Pill>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>{item.title}</div>
-                    <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                  <div style={{ minWidth: 0, flex: "1 1 240px" }}>
+                    <div style={{ fontSize: "var(--fs-base)", fontWeight: 600 }}>{item.title}</div>
+                    <div style={{ fontSize: "var(--fs-sm)", color: "var(--text-secondary)" }}>
                       {item.detail}
                     </div>
                   </div>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginLeft: "auto" }}>
                     {item.amount && (
-                      <span className="tnum" style={{ fontSize: 12.5, fontWeight: 600,
+                      <span className="tnum" style={{ fontSize: "var(--fs-base)", fontWeight: 600,
                                                       whiteSpace: "nowrap" }}>
                         {money(item.amount)}
                       </span>
                     )}
-                    <button onClick={() => ack(item)} title="Hide this item"
-                            style={{
-                              border: "1px solid var(--border)", background: "transparent",
-                              color: "var(--text-secondary)", fontSize: 11.5,
-                              cursor: "pointer", padding: "3px 9px", borderRadius: 6,
-                              whiteSpace: "nowrap",
-                            }}>
+                    <MiniButton onClick={() => ack(item)} title="Hide this item">
                       Ack
-                    </button>
+                    </MiniButton>
                   </div>
                 </div>
               ))}
@@ -158,7 +147,7 @@ export default function Daily() {
       </Card>
 
       {/* --- the ratios a bank reports daily --- */}
-      <Grid cols="repeat(auto-fit, minmax(180px, 1fr))">
+      <Grid cols="repeat(auto-fit, minmax(160px, 1fr))">
         <Stat label="Yield on advances" value={pct(r?.yield_on_advances_pct, 2)}
               hint="annualised" />
         <Stat label="Cost of deposits" value={pct(r?.cost_of_deposits_pct, 2)}
@@ -287,7 +276,7 @@ export default function Daily() {
           {!v ? <Empty title="No data" />
             : (
               <dl style={{ margin: 0, display: "grid",
-                           gridTemplateColumns: "1fr auto", rowGap: 7, fontSize: 12.5,
+                           gridTemplateColumns: "1fr auto", rowGap: 7, fontSize: "var(--fs-base)",
                            padding: "4px 4px 0" }}>
                 <Line label="Interest received" value={money(v.interest_received)} />
                 <Line label="Interest paid" value={`(${money(v.interest_paid)})`} />
@@ -321,7 +310,7 @@ export default function Daily() {
                    { key: "avg", label: "Avg / day", align: "right",
                      render: (p) => money(p.avg_daily), value: (p) => p.avg_daily },
                  ]} />
-          <p style={{ margin: "10px 4px 0", fontSize: 11.5, color: "var(--text-muted)" }}>
+          <p style={{ margin: "10px 4px 0", fontSize: "var(--fs-sm)", color: "var(--text-muted)" }}>
             Balance sheet: advances {compact(r?.advances)} against deposits{" "}
             {compact(r?.deposits)}, a funding gap of {compact(r?.funding_gap)}.
           </p>
@@ -364,7 +353,7 @@ export default function Daily() {
       </Grid>
 
       {summary.data?.comparison && (
-        <p style={{ margin: 0, fontSize: 11.5, color: "var(--text-muted)", textAlign: "center" }}>
+        <p style={{ margin: 0, fontSize: "var(--fs-sm)", color: "var(--text-muted)", textAlign: "center" }}>
           {summary.data.comparison.prior_has_data
             ? `Comparing ${longDate(summary.data.comparison.current_period.start)} – ` +
               `${longDate(summary.data.comparison.current_period.end)} against the ` +
@@ -420,7 +409,7 @@ function SortButtons<K extends string>({ sort, options }: {
   return (
     <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap",
                   alignItems: "center" }}>
-      <span style={{ fontSize: 11.5, color: "var(--text-muted)" }}>Sort by</span>
+      <span style={{ fontSize: "var(--fs-sm)", color: "var(--text-muted)" }}>Sort by</span>
       {options.map(([k, lbl]) => (
         <MiniButton key={k} active={sort.key === k} onClick={() => sort.by(k)}
                     title={sort.key === k ? "Click again to reverse" : undefined}>

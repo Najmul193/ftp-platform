@@ -85,7 +85,7 @@ export default function Admin() {
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {message && (
         <div style={{
-          padding: "9px 12px", borderRadius: 8, fontSize: 13,
+          padding: "9px 12px", borderRadius: 8, fontSize: "var(--fs-base)",
           border: `1px solid ${message.tone === "good"
             ? "var(--status-good)" : "var(--status-critical)"}`,
           background: "var(--surface-2)",
@@ -256,12 +256,10 @@ function BranchForm({
   const [category, setCategory] = useState(branch?.category ?? "URBAN");
   const [opened, setOpened] = useState(branch?.opened_on ?? "");
 
-  const field: React.CSSProperties = {
-    background: "var(--surface-1)", border: "1px solid var(--border-strong)",
-    borderRadius: 7, padding: "7px 9px", fontSize: 13, width: "100%",
-  };
+  // Fields take the global form look; only the width is set here.
+  const field: React.CSSProperties = { width: "100%" };
   const label: React.CSSProperties = {
-    fontSize: 10.5, fontWeight: 600, letterSpacing: ".05em",
+    fontSize: "var(--fs-xs)", fontWeight: 600, letterSpacing: ".05em",
     textTransform: "uppercase", color: "var(--text-muted)",
     marginBottom: 4, display: "block",
   };
@@ -334,11 +332,11 @@ function BranchForm({
           <Pill tone={usage.deletable ? "good" : "warning"}>
             {usage.deletable ? "Safe to delete" : "Has history"}
           </Pill>
-          <p style={{ margin: "6px 0 0", fontSize: 12.5, color: "var(--text-secondary)" }}>
+          <p style={{ margin: "6px 0 0", fontSize: "var(--fs-base)", color: "var(--text-secondary)" }}>
             {usage.note}
           </p>
           {!usage.deletable && (
-            <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--text-muted)" }}
+            <p style={{ margin: "4px 0 0", fontSize: "var(--fs-sm)", color: "var(--text-muted)" }}
                className="tnum">
               {usage.fact_rows.toLocaleString()} calculated rows ·{" "}
               {usage.bank_rows.toLocaleString()} raw rows ·{" "}
@@ -384,12 +382,10 @@ function ProductForm({
   const [bench, setBench] = useState("");
   const [details, setDetails] = useState(product?.details ?? "");
 
-  const field: React.CSSProperties = {
-    background: "var(--surface-1)", border: "1px solid var(--border-strong)",
-    borderRadius: 7, padding: "7px 9px", fontSize: 13, width: "100%",
-  };
+  // Fields take the global form look; only the width is set here.
+  const field: React.CSSProperties = { width: "100%" };
   const label: React.CSSProperties = {
-    fontSize: 10.5, fontWeight: 600, letterSpacing: ".05em",
+    fontSize: "var(--fs-xs)", fontWeight: 600, letterSpacing: ".05em",
     textTransform: "uppercase", color: "var(--text-muted)",
     marginBottom: 4, display: "block",
   };
@@ -474,7 +470,7 @@ function ProductForm({
                       background: "var(--surface-2)",
                       border: "1px solid var(--status-warning)" }}>
           <Pill tone="warning">Inactive</Pill>
-          <span style={{ marginLeft: 8, fontSize: 12.5, color: "var(--text-secondary)" }}>
+          <span style={{ marginLeft: 8, fontSize: "var(--fs-base)", color: "var(--text-secondary)" }}>
             Deactivated products keep their history but accept no new feed rows.
           </span>
         </div>

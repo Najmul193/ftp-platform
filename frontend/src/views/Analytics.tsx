@@ -174,7 +174,7 @@ export default function Analytics() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 11.5, color: "var(--text-muted)", fontWeight: 600,
+        <span style={{ fontSize: "var(--fs-sm)", color: "var(--text-muted)", fontWeight: 600,
                        letterSpacing: ".05em", textTransform: "uppercase" }}>
           Analyse by
         </span>

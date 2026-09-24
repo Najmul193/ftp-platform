@@ -1,6 +1,7 @@
 import { CSSProperties, ReactNode, forwardRef, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { compact, money, n, pct, signed, toCsv } from "../format";
 import { ExpandedHeight } from "./fullscreen";
+import { Icon, type IconName } from "./icons";
 
 // --------------------------------------------------------------------------
 // Card
@@ -97,7 +98,7 @@ export function Card({
       ref={sectionRef}
       style={{
         background: "var(--surface-1)", border: "1px solid var(--border)",
-        borderRadius: "var(--radius)", boxShadow: "var(--shadow)",
+        borderRadius: "var(--radius)", boxShadow: "var(--shadow-sm)",
         display: "flex", flexDirection: "column", minWidth: 0,
         ...overlay,
       }}
@@ -109,15 +110,15 @@ export function Card({
       {(title || actions) && (
         <header style={{
           display: "flex", alignItems: "flex-start", justifyContent: "space-between",
-          gap: 12, padding: expanded ? "18px 22px 0" : "14px 16px 0", flexWrap: "wrap",
+          gap: 12, padding: expanded ? "20px 24px 0" : "16px 20px 0", flexWrap: "wrap",
         }}>
           <div style={{ minWidth: 0 }}>
             {title && <h3 style={{
-              margin: 0, fontSize: expanded ? 15 : 13, fontWeight: 600,
-              letterSpacing: ".01em", color: "var(--text-primary)",
+              margin: 0, fontSize: expanded ? "var(--fs-lg)" : "var(--fs-md)",
+              fontWeight: 600, lineHeight: 1.35, color: "var(--text-primary)",
             }}>{title}</h3>}
             {subtitle && <p style={{
-              margin: "2px 0 0", fontSize: 12, color: "var(--text-muted)",
+              margin: "3px 0 0", fontSize: "var(--fs-sm)", color: "var(--text-muted)",
             }}>{subtitle}</p>}
           </div>
           {/* The filters ride along: a chart is not much use full screen if
@@ -126,7 +127,7 @@ export function Card({
         </header>
       )}
       <div style={{
-        padding: pad ? (expanded ? "10px 22px 16px" : "8px 12px 12px") : 0,
+        padding: pad ? (expanded ? "12px 24px 18px" : "12px 16px 16px") : 0,
         flex: 1, minWidth: 0,
         ...(expandable ? { position: "relative" } : {}),
         ...(expanded ? { display: "flex", flexDirection: "column", minHeight: 0 } : {}),
@@ -150,10 +151,11 @@ export function Card({
       </div>
       {footnote && (
         <footer style={{
-          padding: expanded ? "0 22px 16px" : "0 16px 12px",
-          // A footnote explains the card; it never competes with it. Set a
-          // step below the smallest data text so the eye reaches it last.
-          fontSize: 10.5, color: "var(--text-muted)", lineHeight: 1.4,
+          padding: expanded ? "10px 24px 16px" : "10px 20px 14px",
+          borderTop: "1px solid var(--grid)",
+          // A footnote explains the card; it never competes with it. Set in
+          // the smallest step and muted so the eye reaches it last.
+          fontSize: "var(--fs-xs)", color: "var(--text-muted)", lineHeight: 1.5,
         }}>{footnote}</footer>
       )}
     </section>
@@ -188,8 +190,8 @@ const FullscreenToggle = forwardRef<HTMLButtonElement, {
         position: "absolute", right: expanded ? 24 : 12, bottom: expanded ? 18 : 12,
         zIndex: 2, width: 26, height: 26, padding: 0,
         display: "grid", placeItems: "center", cursor: "pointer",
-        background: "var(--surface-1)", borderRadius: 6,
-        border: "1px solid var(--border-strong)",
+        background: "var(--surface-1)", borderRadius: "var(--radius-xs)",
+        border: "1px solid var(--border-strong)", boxShadow: "var(--shadow-sm)",
         color: hot ? "var(--text-primary)" : "var(--text-muted)",
         opacity: hot ? 1 : 0.75, transition: "opacity .15s ease, color .15s ease",
       }}
@@ -236,18 +238,20 @@ export function Stat({
   return (
     <div style={{
       background: "var(--surface-1)", border: "1px solid var(--border)",
-      borderRadius: "var(--radius)", padding: "14px 16px",
-      boxShadow: "var(--shadow)", display: "flex", flexDirection: "column", gap: 4,
+      borderRadius: "var(--radius)", padding: "16px 18px",
+      boxShadow: "var(--shadow-sm)", display: "flex", flexDirection: "column", gap: 6,
       minWidth: 0,
     }}>
       <span style={{
-        fontSize: 11, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase",
-        color: "var(--text-muted)",
+        fontSize: "var(--fs-xs)", fontWeight: 600, letterSpacing: ".05em",
+        textTransform: "uppercase", color: "var(--text-secondary)",
       }}>{label}</span>
 
       {/* Proportional figures: tabular-nums reads loose at display size. */}
       <strong style={{
-        fontSize: 26, fontWeight: 650, lineHeight: 1.15, letterSpacing: "-.02em",
+        // Long figures (lakh-grouped money) step down so they stay in the tile.
+        fontSize: value.length > 12 ? 22 : value.length > 9 ? 24 : "var(--fs-xl)",
+        fontWeight: 650, lineHeight: 1.1, letterSpacing: "-.02em",
         color: tone === "good" ? "var(--delta-up)"
              : tone === "bad" ? "var(--delta-down)" : "var(--text-primary)",
       }}>{value}</strong>
@@ -255,7 +259,7 @@ export function Stat({
       {(d != null || hint) && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           {d != null && (
-            <span style={{ fontSize: 12, fontWeight: 600, color: deltaColor,
+            <span style={{ fontSize: "var(--fs-sm)", fontWeight: 600, color: deltaColor,
                            display: "inline-flex", alignItems: "center", gap: 3 }}>
               {/* Direction is carried by the arrow glyph and the sign, not by
                   colour alone. */}
@@ -264,7 +268,7 @@ export function Stat({
               {deltaPct != null && <span style={{ opacity: .85 }}>({pct(deltaPct, 1)})</span>}
             </span>
           )}
-          {hint && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{hint}</span>}
+          {hint && <span style={{ fontSize: "var(--fs-sm)", color: "var(--text-muted)" }}>{hint}</span>}
         </div>
       )}
 
@@ -320,7 +324,8 @@ export function Table<T>({
   const [query, setQuery] = useState("");
 
   if (!rows.length) {
-    return <p style={{ padding: "18px 4px", color: "var(--text-muted)", fontSize: 13, margin: 0 }}>
+    return <p style={{ padding: "20px 4px", color: "var(--text-muted)",
+                       fontSize: "var(--fs-base)", margin: 0 }}>
       {empty}
     </p>;
   }
@@ -336,7 +341,7 @@ export function Table<T>({
   return (
     <>
       {(csvName || search) && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6,
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10,
                       flexWrap: "wrap" }}>
           {search && (
             <div style={{ position: "relative", flex: "1 1 220px", maxWidth: 340 }}>
@@ -344,20 +349,16 @@ export function Table<T>({
                      aria-label={searchPlaceholder}
                      onChange={(e) => setQuery(e.target.value)}
                      onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); }}
-                     style={{
-                       width: "100%", background: "var(--surface-1)",
-                       border: "1px solid var(--border-strong)", borderRadius: 7,
-                       padding: "6px 9px", fontSize: 12.5, color: "var(--text-primary)",
-                     }} />
+                     style={{ width: "100%" }} />
             </div>
           )}
           {search && terms.length > 0 && (
-            <span style={{ fontSize: 11.5, color: "var(--text-muted)" }}>
+            <span style={{ fontSize: "var(--fs-sm)", color: "var(--text-muted)" }}>
               {shown.length.toLocaleString("en-IN")} of {rows.length.toLocaleString("en-IN")}
             </span>
           )}
           {csvName && (
-            <MiniButton style={{ marginLeft: "auto" }} onClick={() => toCsv(
+            <MiniButton icon="download" style={{ marginLeft: "auto" }} onClick={() => toCsv(
               shown.map((r) => Object.fromEntries(
                 cols.map((c) => [c.label, c.value ? c.value(r) : (r as never)[c.key]]),
               )), csvName,
@@ -366,23 +367,25 @@ export function Table<T>({
         </div>
       )}
       {!shown.length && (
-        <p style={{ padding: "18px 4px", color: "var(--text-muted)", fontSize: 13, margin: 0 }}>
+        <p style={{ padding: "20px 4px", color: "var(--text-muted)",
+                    fontSize: "var(--fs-base)", margin: 0 }}>
           Nothing matches “{query.trim()}”.
         </p>
       )}
       {shown.length > 0 && (
-      <div style={{ overflowX: "auto", maxHeight, overflowY: maxHeight ? "auto" : undefined }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+      <div style={{ overflowX: "auto", maxHeight, overflowY: maxHeight ? "auto" : undefined,
+                    borderRadius: "var(--radius-sm)" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--fs-base)" }}>
           <thead>
             <tr>
               {cols.map((c) => (
                 <th key={c.key} scope="col" style={{
-                  textAlign: c.align ?? "left", padding: "7px 10px",
-                  position: maxHeight ? "sticky" : undefined, top: 0,
-                  background: "var(--surface-1)",
+                  textAlign: c.align ?? "left", padding: "9px 12px",
+                  position: maxHeight ? "sticky" : undefined, top: 0, zIndex: 1,
+                  background: "var(--surface-2)",
                   borderBottom: "1px solid var(--border)",
-                  color: "var(--text-muted)", fontWeight: 600, fontSize: 11,
-                  letterSpacing: ".04em", textTransform: "uppercase",
+                  color: "var(--text-secondary)", fontWeight: 600, fontSize: "var(--fs-xs)",
+                  letterSpacing: ".05em", textTransform: "uppercase",
                   whiteSpace: "nowrap", width: c.width,
                 }}>{c.label}</th>
               ))}
@@ -390,7 +393,7 @@ export function Table<T>({
           </thead>
           <tbody>
             {shown.map((r, i) => (
-              <tr key={i}
+              <tr key={i} className={onRowClick ? "clickable" : undefined}
                   onClick={onRowClick ? () => onRowClick(r) : undefined}
                   style={{
                     borderBottom: "1px solid var(--grid)",
@@ -398,8 +401,9 @@ export function Table<T>({
                   }}>
                 {cols.map((c) => (
                   <td key={c.key} className="tnum" style={{
-                    textAlign: c.align ?? "left", padding: "7px 10px",
+                    textAlign: c.align ?? "left", padding: "10px 12px",
                     color: "var(--text-secondary)", whiteSpace: "nowrap",
+                    transition: "background .1s ease",
                   }}>
                     {c.render ? c.render(r) : String((r as never)[c.key] ?? "")}
                   </td>
@@ -418,40 +422,57 @@ export function Table<T>({
 // Small pieces
 // --------------------------------------------------------------------------
 
-export function MiniButton({ children, onClick, active, title, disabled, style }: {
+/** The small control: toolbar toggles, sort keys, table actions. `active`
+ *  marks the selected one of a set. */
+export function MiniButton({ children, onClick, active, title, disabled, style, icon }: {
   children: ReactNode; onClick?: () => void; active?: boolean; title?: string;
-  disabled?: boolean; style?: React.CSSProperties;
+  disabled?: boolean; style?: React.CSSProperties; icon?: IconName;
 }) {
   return (
     <button type="button" onClick={disabled ? undefined : onClick} title={title}
-            disabled={disabled} style={{
-      border: "1px solid var(--border)", background: active ? "var(--surface-2)" : "transparent",
-      color: active ? "var(--text-primary)" : "var(--text-secondary)",
-      borderRadius: 6, padding: "3px 9px", fontSize: 11.5,
-      cursor: disabled ? "not-allowed" : "pointer",
-      opacity: disabled ? .45 : 1, fontWeight: active ? 600 : 500,
+            disabled={disabled} aria-pressed={active}
+            className={`btn ${active ? "btn-active" : "btn-secondary"}`} style={{
+      display: "inline-flex", alignItems: "center", gap: 6,
+      height: 28, padding: "0 10px", borderRadius: "var(--radius-xs)",
+      fontSize: "var(--fs-sm)", fontWeight: active ? 600 : 500,
       whiteSpace: "nowrap", ...style,
-    }}>{children}</button>
+    }}>{icon && <Icon name={icon} size={14} />}{children}</button>
   );
 }
 
-export function Button({ children, onClick, variant = "default", disabled, type = "button", style }: {
+export function Button({ children, onClick, variant = "default", size = "md", disabled,
+  type = "button", style, icon }: {
   children: ReactNode; onClick?: () => void;
-  variant?: "default" | "primary" | "danger"; disabled?: boolean;
-  type?: "button" | "submit"; style?: React.CSSProperties;
+  variant?: "default" | "primary" | "danger" | "ghost"; size?: "sm" | "md";
+  disabled?: boolean; type?: "button" | "submit"; style?: React.CSSProperties;
+  icon?: IconName;
 }) {
-  const styles = {
-    default: { bg: "var(--surface-1)", fg: "var(--text-primary)", bd: "var(--border-strong)" },
-    primary: { bg: "var(--series-1)", fg: "#fff", bd: "var(--series-1)" },
-    danger:  { bg: "var(--status-critical)", fg: "#fff", bd: "var(--status-critical)" },
-  }[variant];
+  const cls = { default: "btn-secondary", primary: "btn-primary",
+                danger: "btn-danger", ghost: "btn-ghost" }[variant];
   return (
-    <button type={type} onClick={onClick} disabled={disabled} style={{
-      background: styles.bg, color: styles.fg, border: `1px solid ${styles.bd}`,
-      borderRadius: 7, padding: "7px 14px", fontSize: 13, fontWeight: 550,
-      cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? .5 : 1,
-      ...style,
-    }}>{children}</button>
+    <button type={type} onClick={onClick} disabled={disabled} className={`btn ${cls}`} style={{
+      display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7,
+      height: size === "sm" ? 28 : 34, padding: size === "sm" ? "0 10px" : "0 14px",
+      borderRadius: "var(--radius-sm)",
+      fontSize: size === "sm" ? "var(--fs-sm)" : "var(--fs-base)", fontWeight: 600,
+      whiteSpace: "nowrap", ...style,
+    }}>{icon && <Icon name={icon} size={size === "sm" ? 14 : 16} />}{children}</button>
+  );
+}
+
+/** A square, label-less control. The label goes to assistive tech and the
+ *  tooltip, so the icon never has to carry the meaning alone. */
+export function IconButton({ icon, label, onClick, active, style }: {
+  icon: IconName; label: string; onClick?: () => void; active?: boolean;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <button type="button" onClick={onClick} aria-label={label} title={label}
+            aria-pressed={active}
+            className={`btn ${active ? "btn-active" : "btn-ghost"}`} style={{
+      display: "inline-grid", placeItems: "center", width: 32, height: 32, padding: 0,
+      borderRadius: "var(--radius-sm)", flexShrink: 0, ...style,
+    }}><Icon name={icon} /></button>
   );
 }
 
@@ -463,15 +484,16 @@ export function Pill({ tone, children }: {
     good:     { c: "var(--status-good)", i: "✓" },
     warning:  { c: "var(--status-warning)", i: "△" },
     critical: { c: "var(--status-critical)", i: "✕" },
-    info:     { c: "var(--series-1)", i: "ℹ" },
+    info:     { c: "var(--accent)", i: "ℹ" },
     neutral:  { c: "var(--text-muted)", i: "·" },
   }[tone];
   return (
     <span style={{
-      display: "inline-flex", alignItems: "center", gap: 4,
-      fontSize: 11, fontWeight: 600, color: map.c,
-      border: `1px solid ${map.c}`, borderRadius: 999, padding: "1px 8px",
-      whiteSpace: "nowrap",
+      display: "inline-flex", alignItems: "center", gap: 5,
+      fontSize: "var(--fs-xs)", fontWeight: 600, lineHeight: "18px", color: map.c,
+      background: `color-mix(in srgb, ${map.c} var(--tint), transparent)`,
+      border: `1px solid color-mix(in srgb, ${map.c} 22%, transparent)`,
+      borderRadius: 999, padding: "1px 9px", whiteSpace: "nowrap",
     }}>
       <span aria-hidden>{map.i}</span>{children}
     </span>
@@ -518,16 +540,15 @@ export function RankFilter({
   const chunks = Math.max(1, Math.ceil(count / pageSize));
   const safe = Math.min(Math.max(page, 0), chunks - 1);
   const select: React.CSSProperties = {
-    background: "var(--surface-1)", border: "1px solid var(--border-strong)",
-    borderRadius: 6, padding: "2px 6px", fontSize: 11.5,
-    color: "var(--text-primary)", minWidth: 0, cursor: "pointer",
+    minHeight: 26, padding: "0 6px", borderRadius: "var(--radius-xs)",
+    fontSize: "var(--fs-sm)", minWidth: 0, cursor: "pointer",
   };
   const row: React.CSSProperties = {
     display: "flex", alignItems: "center", gap: 5, whiteSpace: "nowrap",
   };
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end",
-                  gap: 4, fontSize: 11, color: "var(--text-muted)" }}>
+                  gap: 4, fontSize: "var(--fs-xs)", color: "var(--text-muted)" }}>
       <div style={row}>
         <span>showing</span>
         <select style={select} value={safe} disabled={count === 0}
@@ -560,17 +581,17 @@ export function Empty({ title, hint, action }: {
     <div style={{
       padding: "36px 20px", textAlign: "center", color: "var(--text-muted)",
     }}>
-      <p style={{ margin: 0, fontSize: 14, color: "var(--text-secondary)", fontWeight: 550 }}>
+      <p style={{ margin: 0, fontSize: "var(--fs-md)", color: "var(--text-secondary)", fontWeight: 600 }}>
         {title}
       </p>
-      {hint && <p style={{ margin: "6px 0 0", fontSize: 12.5, maxWidth: 460,
+      {hint && <p style={{ margin: "6px 0 0", fontSize: "var(--fs-base)", maxWidth: 460,
                            marginInline: "auto", lineHeight: 1.5 }}>{hint}</p>}
       {action && <div style={{ marginTop: 14 }}>{action}</div>}
     </div>
   );
 }
 
-export function Grid({ cols, children, gap = 14 }: {
+export function Grid({ cols, children, gap = 16 }: {
   cols: string; children: ReactNode; gap?: number;
 }) {
   return <div style={{ display: "grid", gridTemplateColumns: cols, gap }}>{children}</div>;

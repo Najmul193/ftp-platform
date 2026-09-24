@@ -9,8 +9,8 @@ import { useApp, useAsync } from "../state";
 
 type Level = "division" | "district" | "branch";
 
-const TILE_H = 104;
-const GAP = 14;
+const TILE_H = 112;
+const GAP = 16;
 const TOP_N = 5;
 
 /** The three ranking basis the branch charts can be cut on. */
@@ -33,9 +33,10 @@ export default function BasicOverview() {
   // screen at once, and drilling down is a click. Starting at branch level
   // would open on a few hundred rows nobody asked for.
   const [level, setLevel] = useState<Level>("division");
-  // Fit the top block in one viewport: the tallest fixed chrome above the
-  // content (sticky dock + status row + page padding) is ~132px.
-  const [avail, setAvail] = useState(Math.max(520, window.innerHeight - 132));
+  // Fit the top block in one viewport: whatever sits above the page (the
+  // sticky top bar, the filter panel when open, the page title) is measured
+  // rather than assumed, since each can change height.
+  const [avail, setAvail] = useState(Math.max(520, window.innerHeight - 180));
   // Width of the page container, measured so the left rail can match the top
   // tiles exactly: (containerWidth - 4 gaps) / 5 columns.
   const pageRef = useRef<HTMLDivElement>(null);
@@ -49,9 +50,18 @@ export default function BasicOverview() {
   const [productPage, setProductPage] = useState(0);
 
   useEffect(() => {
-    const onResize = () => setAvail(Math.max(520, window.innerHeight - 132));
+    const onResize = () => {
+      const el = pageRef.current;
+      const top = el ? el.getBoundingClientRect().top + window.scrollY : 180;
+      setAvail(Math.max(520, window.innerHeight - top - 24));
+    };
     onResize();
     window.addEventListener("resize", onResize);
+    // Opening or closing the filter panel moves the page without resizing
+    // the window, so the top bar is watched too.
+    const masthead = document.querySelector(".masthead");
+    const mo = masthead ? new ResizeObserver(onResize) : undefined;
+    if (masthead) mo!.observe(masthead);
 
     // The container width changes whenever the collapsible sidebar toggles,
     // which never fires a window resize, so watch the page itself.
@@ -63,10 +73,14 @@ export default function BasicOverview() {
     return () => {
       window.removeEventListener("resize", onResize);
       ro?.disconnect();
+      mo?.disconnect();
     };
   }, []);
 
   const leftWidth = Math.max(220, Math.round((pageW - GAP * 4) / 5));
+  // A phone cannot hold five tiles abreast or a stat rail beside the charts:
+  // below this the tiles pair up and everything stacks.
+  const stacked = pageW > 0 && pageW < 720;
 
   const k = useAsync(() => api.kpis(filters), [filters]);
   const branches = useAsync(() => api.byBranch(filters), [filters]);
@@ -319,25 +333,26 @@ export default function BasicOverview() {
   // Top row of balance stats: stretches across the full page width so the
   // tiles grow into the space the chart grid leaves empty on the right.
   const topStats = (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
-                  gap: GAP }}>
-      <div style={{ height: TILE_H, display: "grid" }}>
+    <div style={{ display: "grid", gap: GAP,
+                  gridTemplateColumns: stacked ? "repeat(2, minmax(0, 1fr))"
+                    : "repeat(5, minmax(0, 1fr))" }}>
+      <div style={{ height: stacked ? undefined : TILE_H, display: "grid" }}>
         <Stat label="Asset balance" value={compact(kpis?.asset_balance)}
               hint="total before liabilities" />
       </div>
-      <div style={{ height: TILE_H, display: "grid" }}>
+      <div style={{ height: stacked ? undefined : TILE_H, display: "grid" }}>
         <Stat label="Liability balance" value={compact(kpis?.liability_balance)}
               hint="total borrowings and deposits" />
       </div>
-      <div style={{ height: TILE_H, display: "grid" }}>
+      <div style={{ height: stacked ? undefined : TILE_H, display: "grid" }}>
         <Stat label="Interest receivable" value={money(kpis?.interest_receivable)}
               hint="earned on the book" />
       </div>
-      <div style={{ height: TILE_H, display: "grid" }}>
+      <div style={{ height: stacked ? undefined : TILE_H, display: "grid" }}>
         <Stat label="Interest payable" value={money(kpis?.interest_payable)}
               hint="cost of the book" />
       </div>
-      <div style={{ height: TILE_H, display: "grid" }}>
+      <div style={{ height: stacked ? undefined : TILE_H, display: "grid" }}>
         <Stat label="Branches" value={String(kpis?.branch_count ?? 0)}
               hint={`${kpis?.day_count ?? 0} day${(kpis?.day_count ?? 0) === 1 ? "" : "s"}`} />
       </div>
@@ -346,7 +361,9 @@ export default function BasicOverview() {
 
   // Left rail: the five FTP headline stats, same tile size as the top row.
   const ftpStats = (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10, flex: 1, minHeight: 0 }}>
+    <div style={stacked
+      ? { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: GAP, flex: 1 }
+      : { display: "flex", flexDirection: "column", gap: 10, flex: 1, minHeight: 0 }}>
       {[
         ["Asset FTP profit", money(kpis?.asset_ftp_profit), "funding benefit on assets"],
         ["Liability FTP profit", money(kpis?.liability_ftp_profit), "funding cost on liabilities"],
@@ -354,7 +371,7 @@ export default function BasicOverview() {
         ["FTP / balance", pct(kpis?.ftp_over_balance_pct, 4), "annualised rate"],
         ["No. of days", String(kpis?.day_count ?? 0), "covered by the filters"],
       ].map(([label, value, hint]) => (
-        <div key={label} style={{ height: TILE_H, display: "grid" }}>
+        <div key={label} style={{ height: stacked ? undefined : TILE_H, display: "grid" }}>
           <Stat label={label} value={value} hint={hint} />
         </div>
       ))}
@@ -369,10 +386,10 @@ export default function BasicOverview() {
   // the rank filters) the row grows to keep the chart readable and the page
   // scrolls, rather than the chart being squeezed to a sliver. When the chart
   // area is too narrow for two readable columns, the charts stack.
-  const topRowHeight = 104;
+  const topRowHeight = TILE_H;
   const mainAreaHeight = Math.max(240, avail - topRowHeight - 12);
   const chartRowHeight = (mainAreaHeight - 12) / 2;
-  const oneColumn = pageW > 0 && pageW - leftWidth - 14 < TWO_COLUMN_MIN;
+  const oneColumn = stacked || (pageW > 0 && pageW - leftWidth - GAP < TWO_COLUMN_MIN);
 
   return (
     <div ref={pageRef} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -381,10 +398,11 @@ export default function BasicOverview() {
                     gap: 12 }}>
         {topStats}
 
-        <div style={{ flex: 1, minHeight: 0, display: "flex", gap: 14 }}>
+        <div style={{ flex: 1, minHeight: 0, display: "flex", gap: GAP,
+                      flexDirection: stacked ? "column" : "row" }}>
           {/* Left: five headline FTP stats stacked to full height */}
-<div style={{ display: "flex", minWidth: 200, width: leftWidth, flexShrink: 0,
-                      justifyContent: "center" }}>
+          <div style={{ display: "flex", minWidth: 200, flexShrink: 0,
+                        width: stacked ? "100%" : leftWidth, justifyContent: "center" }}>
           {ftpStats}
         </div>
 
@@ -460,10 +478,10 @@ export default function BasicOverview() {
       {/* ---- the workbook's three summary sheets ------------------------- */}
       <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16,
                     marginTop: 2 }}>
-        <h2 style={{ margin: "0 0 2px", fontSize: 15, fontWeight: 650 }}>
+        <h2 style={{ margin: "0 0 2px", fontSize: 16, fontWeight: 650, color: "var(--text-primary)" }}>
           Profit summaries
         </h2>
-        <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-muted)" }}>
+        <p style={{ margin: "0 0 14px", fontSize: "var(--fs-base)", color: "var(--text-muted)" }}>
           The workbook's Branch, Product and Daily profit sheets, rebuilt from
           the calculated results and scoped by the filters above.
         </p>

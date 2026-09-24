@@ -1,5 +1,5 @@
 import { useApp } from "../state";
-import { MiniButton, Pill } from "./ui";
+import { Button } from "./ui";
 
 /** ONE filter row above everything it scopes. Never per-chart filters, and
  *  never a filter inside a chart card -- every chart on the page re-renders
@@ -7,15 +7,20 @@ import { MiniButton, Pill } from "./ui";
 export default function FilterBar({ collapsed = false }: { collapsed?: boolean }) {
   const { filters, setFilters, resetFilters, branches, products, divisions, districts, me } = useApp();
 
-  const field: React.CSSProperties = {
-    background: "var(--surface-1)", border: "1px solid var(--border-strong)",
-    borderRadius: 7, padding: "6px 9px", fontSize: 12.5, color: "var(--text-primary)",
-    minWidth: 0,
-  };
+  // Fields take the global form look; only the width is set here.
+  const field: React.CSSProperties = { minWidth: 0, maxWidth: 220 };
   const label: React.CSSProperties = {
-    fontSize: 10.5, fontWeight: 600, letterSpacing: ".05em",
-    textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 3,
-    display: "block",
+    fontSize: "var(--fs-xs)", fontWeight: 600, color: "var(--text-secondary)",
+    marginBottom: 4, display: "block",
+  };
+  // An applied filter reads as a removable chip, in the accent, in both the
+  // open panel and the collapsed summary.
+  const chip: React.CSSProperties = {
+    display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0,
+    background: "var(--accent-soft)", color: "var(--accent)",
+    border: "1px solid color-mix(in srgb, var(--accent) 25%, transparent)",
+    borderRadius: 999, height: 24, padding: "0 6px 0 10px",
+    fontSize: "var(--fs-sm)", fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap",
   };
 
   const visibleDistricts = filters.division_id
@@ -69,18 +74,13 @@ export default function FilterBar({ collapsed = false }: { collapsed?: boolean }
       <div style={{ display: "flex", gap: 4, alignItems: "center", minWidth: 0,
                     overflow: "hidden" }}>
         {chips.length === 0 ? (
-          <span style={{ fontSize: 11.5, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
-            No filters
+          <span style={{ fontSize: "var(--fs-sm)", color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+            All data · no filters
           </span>
         ) : (
           chips.slice(0, 5).map((c) => (
-            <button key={c.k} onClick={c.clear} title="Remove this filter" style={{
-              display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0,
-              background: "var(--surface-1)", border: "1px solid var(--border-strong)",
-              borderRadius: 999, padding: "1px 6px 1px 9px", fontSize: 11,
-              color: "var(--text-secondary)", cursor: "pointer", whiteSpace: "nowrap",
-            }}>
-              {c.text}<span aria-hidden style={{ fontSize: 12.5, lineHeight: 1 }}>×</span>
+            <button key={c.k} onClick={c.clear} title="Remove this filter" style={chip}>
+              {c.text}<span aria-hidden style={{ fontSize: "var(--fs-md)", lineHeight: 1 }}>×</span>
             </button>
           ))
         )}
@@ -89,10 +89,9 @@ export default function FilterBar({ collapsed = false }: { collapsed?: boolean }
   }
 
   return (
-    <div style={{
-      // Transparent: it always sits inside the masthead, whose print shows through.
-      background: "transparent", borderBottom: "1px solid var(--border)",
-      padding: "10px 20px", position: "sticky",
+    <div className="filter-panel" style={{
+      borderTop: "1px solid var(--border)",
+      padding: "12px 16px 14px", position: "sticky",
       top: "env(safe-area-inset-top, 0px)", zIndex: 20,
     }}>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
@@ -180,23 +179,21 @@ export default function FilterBar({ collapsed = false }: { collapsed?: boolean }
         </div>
 
         <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignSelf: "flex-end" }}>
-          <MiniButton onClick={resetFilters}>Reset</MiniButton>
+          <Button variant="ghost" size="sm" onClick={resetFilters}>Reset</Button>
         </div>
       </div>
 
       {chips.length > 0 && (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 9 }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 12,
+                      alignItems: "center" }}>
           {chips.map((c) => (
-            <button key={c.k} onClick={c.clear} title="Remove this filter" style={{
-              display: "inline-flex", alignItems: "center", gap: 6,
-              background: "var(--surface-1)", border: "1px solid var(--border-strong)",
-              borderRadius: 999, padding: "2px 6px 2px 10px", fontSize: 11.5,
-              color: "var(--text-secondary)", cursor: "pointer",
-            }}>
-              {c.text}<span aria-hidden style={{ fontSize: 13, lineHeight: 1 }}>×</span>
+            <button key={c.k} onClick={c.clear} title="Remove this filter" style={chip}>
+              {c.text}<span aria-hidden style={{ fontSize: "var(--fs-md)", lineHeight: 1 }}>×</span>
             </button>
           ))}
-          <Pill tone="info">{chips.length} active</Pill>
+          <span style={{ fontSize: "var(--fs-sm)", color: "var(--text-muted)", marginLeft: 4 }}>
+            {chips.length} active
+          </span>
         </div>
       )}
     </div>

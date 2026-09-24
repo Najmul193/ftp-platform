@@ -9,18 +9,16 @@ import { useApp, useAsync } from "../state";
 
 const BASES = ["ACT_365", "ACT_360"] as const;
 
-const field: React.CSSProperties = {
-  background: "var(--surface-1)", border: "1px solid var(--border-strong)",
-  borderRadius: 7, padding: "7px 9px", fontSize: 13, width: "100%",
-};
+// Fields take the global form look; only the width is set here.
+const field: React.CSSProperties = { width: "100%" };
 const label: React.CSSProperties = {
-  fontSize: 10.5, fontWeight: 600, letterSpacing: ".05em",
+  fontSize: "var(--fs-xs)", fontWeight: 600, letterSpacing: ".05em",
   textTransform: "uppercase", color: "var(--text-muted)",
   marginBottom: 4, display: "block",
 };
 
 const hint: React.CSSProperties = {
-  fontSize: 11, color: "var(--text-muted)", margin: "4px 0 0", lineHeight: 1.4,
+  fontSize: "var(--fs-xs)", color: "var(--text-muted)", margin: "4px 0 0", lineHeight: 1.4,
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -157,7 +155,7 @@ export default function Rates() {
                                 scrollMarginTop: 24 }}>
       {message && (
         <div style={{
-          padding: "9px 12px", borderRadius: 8, fontSize: 13,
+          padding: "9px 12px", borderRadius: 8, fontSize: "var(--fs-base)",
           border: `1px solid ${message.tone === "good"
             ? "var(--status-good)" : "var(--status-critical)"}`,
           background: "var(--surface-2)",
@@ -169,7 +167,7 @@ export default function Rates() {
 
       {pending.length > 0 && (
         <div style={{
-          padding: "10px 12px", borderRadius: 8, fontSize: 13,
+          padding: "10px 12px", borderRadius: 8, fontSize: "var(--fs-base)",
           border: "1px solid var(--status-warning)", background: "var(--surface-2)",
           display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
         }}>
@@ -209,7 +207,7 @@ export default function Rates() {
       )}
 
       {kept.length > 0 && (
-        <div style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 4px",
+        <div style={{ fontSize: "var(--fs-sm)", color: "var(--text-muted)", margin: "0 4px",
                       lineHeight: 1.6 }}>
           {daysLabel(kept.length)} kept on earlier rates
           {" "}({kept.reduce((a, d) => a + d.rows, 0).toLocaleString("en-IN")} rows).{" "}
@@ -253,7 +251,7 @@ export default function Rates() {
           </>
         )}>
         {current.error && !cfg && (
-          <p style={{ fontSize: 13, color: "var(--status-critical)", margin: "6px 4px" }}>
+          <p style={{ fontSize: "var(--fs-base)", color: "var(--status-critical)", margin: "6px 4px" }}>
             {current.error}
           </p>
         )}
@@ -478,7 +476,7 @@ export default function Rates() {
       </Card>
 
       {!editable && can("CONFIG_RATE_VIEW") && (
-        <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 4px",
+        <p style={{ fontSize: "var(--fs-sm)", color: "var(--text-muted)", margin: "0 4px",
                     lineHeight: 1.5 }}>
           {can("CONFIG_RATE_EDIT")
             ? "Global defaults apply to every branch and can only be changed at "
@@ -499,7 +497,7 @@ function Field({ name, value, hint }: { name: string; value: string; hint?: stri
       <div style={label}>{name}</div>
       <div className="tnum" style={{ fontSize: 17, fontWeight: 600,
                                      color: "var(--text-primary)" }}>{value}</div>
-      {hint && <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}>
+      {hint && <div style={{ fontSize: "var(--fs-xs)", color: "var(--text-muted)", marginTop: 3 }}>
         {hint}</div>}
     </div>
   );
@@ -599,7 +597,7 @@ function GlobalForm({
                  inputMode="decimal"
                  onChange={(e) => setBench(e.target.value)} placeholder="7.25" />
           <label style={{ display: "flex", alignItems: "center", gap: 6,
-                          marginTop: 6, fontSize: 11.5,
+                          marginTop: 6, fontSize: "var(--fs-sm)",
                           color: "var(--text-secondary)" }}>
             <input type="checkbox" checked={noBenchmark}
                    onChange={(e) => setNoBenchmark(e.target.checked)} />
@@ -622,7 +620,7 @@ function GlobalForm({
           <Pill tone={wouldBreak.length ? "critical" : "warning"}>
             {wouldBreak.length ? "Not allowed" : "Every product needs its own"}
           </Pill>
-          <span style={{ marginLeft: 8, fontSize: 12.5, color: "var(--text-secondary)" }}>
+          <span style={{ marginLeft: 8, fontSize: "var(--fs-base)", color: "var(--text-secondary)" }}>
             {wouldBreak.length
               ? `${wouldBreak.join(", ")} `
                 + `${wouldBreak.length === 1 ? "has" : "have"} no benchmark of `
@@ -719,7 +717,7 @@ function ProductRateForm({ product, rates, versions, onCancel, onSaved, onError 
                  inputMode="decimal"
                  onChange={(e) => setLiquidity(e.target.value)} />
           <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6,
-                          fontSize: 11.5, color: "var(--text-secondary)" }}>
+                          fontSize: "var(--fs-sm)", color: "var(--text-secondary)" }}>
             <input type="checkbox" checked={!liqOverride}
                    onChange={(e) => setLiqOverride(!e.target.checked)} />
             Inherit the global default
@@ -737,7 +735,7 @@ function ProductRateForm({ product, rates, versions, onCancel, onSaved, onError 
                  inputMode="decimal"
                  onChange={(e) => setOther(e.target.value)} />
           <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6,
-                          fontSize: 11.5, color: "var(--text-secondary)" }}>
+                          fontSize: "var(--fs-sm)", color: "var(--text-secondary)" }}>
             <input type="checkbox" checked={!othOverride}
                    onChange={(e) => setOthOverride(!e.target.checked)} />
             Inherit the global default
@@ -787,7 +785,7 @@ function BackdateNotice({ from, versions }: {
   if (!replaced.length && !past) return null;
   return (
     <div style={{
-      marginTop: 12, padding: "9px 11px", borderRadius: 8, fontSize: 12.5,
+      marginTop: 12, padding: "9px 11px", borderRadius: 8, fontSize: "var(--fs-base)",
       border: "1px solid var(--status-warning)", background: "var(--surface-2)",
       color: "var(--text-secondary)", lineHeight: 1.55,
     }}>

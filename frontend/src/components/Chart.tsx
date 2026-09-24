@@ -55,7 +55,7 @@ export function baseOption(t: Tokens): echarts.EChartsOption {
   return {
     backgroundColor: "transparent",
     animationDuration: 300,
-    textStyle: { fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif", fontSize: 12 },
+    textStyle: { fontFamily: "'Inter Variable', Inter, system-ui, -apple-system, 'Segoe UI', sans-serif", fontSize: 12 },
     grid: { left: 8, right: 16, top: 24, bottom: 8, containLabel: true },
     tooltip: {
       backgroundColor: t.surface,
@@ -63,7 +63,7 @@ export function baseOption(t: Tokens): echarts.EChartsOption {
       borderWidth: 1,
       padding: [8, 12],
       textStyle: { color: t.text, fontSize: 12 },
-      extraCssText: "box-shadow:0 4px 16px rgba(0,0,0,.12);border-radius:8px;",
+      extraCssText: "box-shadow:0 8px 24px rgba(16,24,40,.14);border-radius:8px;",
     },
     legend: {
       type: "scroll",

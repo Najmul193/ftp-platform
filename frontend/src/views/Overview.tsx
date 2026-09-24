@@ -171,7 +171,7 @@ export default function Overview() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <Grid cols="repeat(auto-fit, minmax(200px, 1fr))">
+      <Grid cols="repeat(auto-fit, minmax(160px, 1fr))">
         <Stat label="Net FTP profit" value={money(s?.net_ftp_profit)}
               delta={d?.net_ftp_profit?.change} deltaPct={d?.net_ftp_profit?.change_pct}
               spark={spark} hint={priorNote} />
@@ -271,7 +271,7 @@ export default function Overview() {
                   return (
                     <div key={name}>
                       <div style={{ display: "flex", justifyContent: "space-between",
-                                    fontSize: 12.5, marginBottom: 4 }}>
+                                    fontSize: "var(--fs-base)", marginBottom: 4 }}>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                           <span aria-hidden style={{ width: 9, height: 9, borderRadius: 2,
                                                      background: color, display: "inline-block" }} />
@@ -293,7 +293,7 @@ export default function Overview() {
                   );
                 })}
                 <dl style={{ margin: "8px 0 0", display: "grid",
-                             gridTemplateColumns: "1fr auto", rowGap: 6, fontSize: 12.5 }}>
+                             gridTemplateColumns: "1fr auto", rowGap: 6, fontSize: "var(--fs-base)" }}>
                   <dt style={{ color: "var(--text-muted)" }}>Funding gap</dt>
                   <dd className="tnum" style={{ margin: 0, textAlign: "right" }}>
                     {compact(bs.data.funding_gap)}

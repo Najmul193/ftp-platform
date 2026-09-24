@@ -138,10 +138,10 @@ export default function Upload() {
             background: drag ? "var(--surface-2)" : "transparent",
             cursor: "pointer", transition: "background .15s, border-color .15s",
           }}>
-          <p style={{ margin: 0, fontSize: 14, fontWeight: 550 }}>
+          <p style={{ margin: 0, fontSize: "var(--fs-md)", fontWeight: 550 }}>
             {file ? file.name : "Drop a workbook here, or click to choose"}
           </p>
-          <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--text-muted)" }}>
+          <p style={{ margin: "6px 0 0", fontSize: "var(--fs-sm)", color: "var(--text-muted)" }}>
             {file
               ? `${(file.size / 1024).toFixed(0)} KB`
               : ".xlsx, .xlsm or .csv — macros are never opened"}
@@ -154,7 +154,7 @@ export default function Upload() {
           <div style={{
             marginTop: 12, padding: "10px 12px", borderRadius: 8,
             border: "1px solid var(--status-critical)",
-            background: "var(--surface-2)", fontSize: 13,
+            background: "var(--surface-2)", fontSize: "var(--fs-base)",
           }}>
             <Pill tone="critical">Upload failed</Pill>
             <p style={{ margin: "6px 0 0", color: "var(--text-secondary)" }}>{error}</p>
@@ -163,7 +163,7 @@ export default function Upload() {
 
         {probe && stage !== "done" && (
           <div style={{ marginTop: 14 }}>
-            <h4 style={{ margin: "0 0 8px", fontSize: 12.5, fontWeight: 600 }}>
+            <h4 style={{ margin: "0 0 8px", fontSize: "var(--fs-base)", fontWeight: 600 }}>
               What the file contains
             </h4>
             <Table rows={probe.sheets}
@@ -190,7 +190,7 @@ export default function Upload() {
             {probe.header_issues.length > 0 && (
               <div style={{ marginTop: 10 }}>
                 <Pill tone="warning">Header drift</Pill>
-                <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 12,
+                <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: "var(--fs-sm)",
                              color: "var(--text-secondary)" }}>
                   {probe.header_issues.map((h, i) => <li key={i}>{h}</li>)}
                 </ul>
@@ -202,7 +202,7 @@ export default function Upload() {
                             background: "var(--surface-2)",
                             border: "1px solid var(--series-1)" }}>
                 <Pill tone="info">Completion file</Pill>
-                <p style={{ margin: "6px 0 0", fontSize: 12.5,
+                <p style={{ margin: "6px 0 0", fontSize: "var(--fs-base)",
                             color: "var(--text-secondary)" }}>
                   This is a rejected-rows workbook produced by this system. It
                   will be <b>merged</b> into the day already loaded, so the rows
@@ -216,22 +216,20 @@ export default function Upload() {
               <div>
                 <label htmlFor="up-date"
                        style={{ display: "block", color: "var(--text-muted)",
-                                fontSize: 10.5, fontWeight: 600, letterSpacing: ".05em",
+                                fontSize: "var(--fs-xs)", fontWeight: 600, letterSpacing: ".05em",
                                 textTransform: "uppercase", marginBottom: 4 }}>
                   Business date <span style={{ color: "var(--status-critical)" }}>*</span>
                 </label>
                 <input id="up-date" type="date" value={businessDate} required
                        onChange={(e) => setBusinessDate(e.target.value)}
-                       style={{ background: "var(--surface-1)", borderRadius: 7,
-                                border: `1px solid ${businessDate
-                                  ? "var(--border-strong)" : "var(--status-critical)"}`,
-                                padding: "6px 9px", fontSize: 12.5 }} />
+                       style={{ borderColor: businessDate
+                                  ? undefined : "var(--status-critical)" }} />
                 {probe.suggested_date && (
                   <div style={{ marginTop: 4 }}>
                     <button type="button"
                             onClick={() => setBusinessDate(probe.suggested_date!)}
                             style={{ background: "none", border: "none", padding: 0,
-                                     fontSize: 11, color: "var(--series-1)",
+                                     fontSize: "var(--fs-xs)", color: "var(--accent)",
                                      cursor: "pointer", textDecoration: "underline" }}>
                       the sheet is named {longDate(probe.suggested_date)} — use it
                     </button>
@@ -240,7 +238,7 @@ export default function Upload() {
               </div>
               <div>
                 <span style={{ display: "block", color: "var(--text-muted)",
-                               fontSize: 10.5, fontWeight: 600, letterSpacing: ".05em",
+                               fontSize: "var(--fs-xs)", fontWeight: 600, letterSpacing: ".05em",
                                textTransform: "uppercase", marginBottom: 4 }}>
                   If the date is already loaded
                 </span>
@@ -259,16 +257,14 @@ export default function Upload() {
                 <div>
                   <label htmlFor="up-sheet"
                          style={{ display: "block", color: "var(--text-muted)",
-                                  fontSize: 10.5, fontWeight: 600, letterSpacing: ".05em",
+                                  fontSize: "var(--fs-xs)", fontWeight: 600, letterSpacing: ".05em",
                                   textTransform: "uppercase", marginBottom: 4 }}>
                     Sheet <span style={{ color: "var(--status-critical)" }}>*</span>
                   </label>
                   <select id="up-sheet" value={sheet}
                           onChange={(e) => setSheet(e.target.value)}
-                          style={{ background: "var(--surface-1)", borderRadius: 7,
-                                   border: `1px solid ${sheet
-                                     ? "var(--border-strong)" : "var(--status-critical)"}`,
-                                   padding: "6px 9px", fontSize: 12.5 }}>
+                          style={{ borderColor: sheet
+                                     ? undefined : "var(--status-critical)" }}>
                     <option value="">choose…</option>
                     {sheetsWithData.map((s) => (
                       <option key={s.name} value={s.name}>
@@ -301,7 +297,7 @@ export default function Upload() {
               <Stat label="Subtotal rows" value={result.structural_rows.toLocaleString()}
                     hint="excluded by rule" />
             </Grid>
-            <p style={{ marginTop: 10, fontSize: 12.5, color: "var(--text-secondary)" }}>
+            <p style={{ marginTop: 10, fontSize: "var(--fs-base)", color: "var(--text-secondary)" }}>
               Batch <b>{result.batch_ref}</b> · {result.status}
               {result.run_ref && <> · calculation {result.run_ref}</>}
               {result.business_dates.length > 0 && <>
@@ -319,7 +315,7 @@ export default function Upload() {
                 <Pill tone="critical">
                   {result.rejected_rows.toLocaleString()} rows not loaded
                 </Pill>
-                <p style={{ margin: "7px 0 0", fontSize: 12.5,
+                <p style={{ margin: "7px 0 0", fontSize: "var(--fs-base)",
                             color: "var(--text-secondary)" }}>
                   These rows reference master data that does not exist yet. The
                   rest of the file loaded and the figures above already include
@@ -331,7 +327,7 @@ export default function Upload() {
                   const counted = Object.values(groups).reduce((a, b) => a + b, 0);
                   return (
                     <>
-                      <ul style={{ margin: "8px 0 0", paddingLeft: 18, fontSize: 12,
+                      <ul style={{ margin: "8px 0 0", paddingLeft: 18, fontSize: "var(--fs-sm)",
                                    color: "var(--text-secondary)" }}>
                         {Object.entries(groups).map(([what, rows]) => (
                           <li key={what}><b>{what}</b> — {rows} row{rows === 1 ? "" : "s"}</li>
@@ -342,7 +338,7 @@ export default function Upload() {
                         // missing branch and a missing product is counted twice.
                         // Saying so is cheaper than leaving the arithmetic to
                         // look wrong.
-                        <p style={{ margin: "6px 0 0", fontSize: 11.5,
+                        <p style={{ margin: "6px 0 0", fontSize: "var(--fs-sm)",
                                     color: "var(--text-muted)" }}>
                           {counted - result.rejected_rows} row
                           {counted - result.rejected_rows === 1 ? "" : "s"} fail more
@@ -371,7 +367,7 @@ export default function Upload() {
 
             {(exceptions.data ?? []).length > 0 && (
               <div style={{ marginTop: 14 }}>
-                <h4 style={{ margin: "0 0 6px", fontSize: 12.5, fontWeight: 600 }}>
+                <h4 style={{ margin: "0 0 6px", fontSize: "var(--fs-base)", fontWeight: 600 }}>
                   Exceptions
                 </h4>
                 <Table rows={exceptions.data ?? []} maxHeight={240}
@@ -397,7 +393,7 @@ export default function Upload() {
           <div style={{ display: "flex", gap: 10, alignItems: "flex-start",
                         padding: "2px 4px" }}>
             <Pill tone="info">Done</Pill>
-            <span style={{ fontSize: 12.5, color: "var(--text-secondary)" }}>
+            <span style={{ fontSize: "var(--fs-base)", color: "var(--text-secondary)" }}>
               {notice}
             </span>
           </div>
@@ -412,7 +408,7 @@ export default function Upload() {
           {!deleting.deletable ? (
             <>
               <Pill tone="critical">Blocked</Pill>
-              <p style={{ margin: "8px 0 0", fontSize: 12.5,
+              <p style={{ margin: "8px 0 0", fontSize: "var(--fs-base)",
                           color: "var(--text-secondary)" }}>
                 {deleting.blocked_by}
               </p>
@@ -436,7 +432,7 @@ export default function Upload() {
                         ? `from ${deleting.batches_restored.join(", ")}` : undefined} />
               </Grid>
 
-              <ul style={{ margin: "12px 0 0", paddingLeft: 18, fontSize: 12.5,
+              <ul style={{ margin: "12px 0 0", paddingLeft: 18, fontSize: "var(--fs-base)",
                            color: "var(--text-secondary)", lineHeight: 1.7 }}>
                 <li>
                   Affects {deleting.business_dates.map(longDate).join(", ")} — each
@@ -457,19 +453,16 @@ export default function Upload() {
                 )}
               </ul>
 
-              <label style={{ display: "block", marginTop: 12, fontSize: 12 }}>
+              <label style={{ display: "block", marginTop: 12, fontSize: "var(--fs-sm)" }}>
                 <span style={{ display: "block", color: "var(--text-muted)",
-                               fontSize: 10.5, fontWeight: 600, letterSpacing: ".05em",
+                               fontSize: "var(--fs-xs)", fontWeight: 600, letterSpacing: ".05em",
                                textTransform: "uppercase", marginBottom: 4 }}>
                   Reason (recorded in the audit trail)
                 </span>
                 <input value={deleteReason}
                        onChange={(e) => setDeleteReason(e.target.value)}
                        placeholder="e.g. loaded against the wrong business date"
-                       style={{ width: "100%", maxWidth: 520,
-                                background: "var(--surface-1)", borderRadius: 7,
-                                border: "1px solid var(--border-strong)",
-                                padding: "7px 10px", fontSize: 13 }} />
+                       style={{ width: "100%", maxWidth: 520 }} />
               </label>
 
               <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
@@ -480,7 +473,7 @@ export default function Upload() {
                 <Button onClick={() => setDeleting(null)}>Cancel</Button>
               </div>
               {!deleteReason.trim() && (
-                <p style={{ margin: "7px 0 0", fontSize: 11.5,
+                <p style={{ margin: "7px 0 0", fontSize: "var(--fs-sm)",
                             color: "var(--text-muted)" }}>
                   A reason is required: the deletion outlives the batch in the
                   audit trail, and a bare record of it is no use six months on.

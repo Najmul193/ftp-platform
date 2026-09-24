@@ -229,7 +229,7 @@ export default function Accounts() {
 
       {/* ---- pricing risk, cut whichever way the reader needs ------------ */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 11.5, color: "var(--text-muted)", fontWeight: 600,
+        <span style={{ fontSize: "var(--fs-sm)", color: "var(--text-muted)", fontWeight: 600,
                        letterSpacing: ".05em", textTransform: "uppercase" }}>
           Break down by
         </span>
@@ -293,9 +293,7 @@ export default function Accounts() {
                       setFilters((f) => ({ ...f, account_no: search || undefined }));
                     }
                   }}
-                  style={{ background: "var(--surface-1)", borderRadius: 7,
-                           border: "1px solid var(--border-strong)",
-                           padding: "5px 9px", fontSize: 12.5, width: 160 }} />
+                  style={{ minHeight: 28, width: 160 }} />
                 <MiniButton active={filters.ftp_sign === "NEGATIVE"}
                             onClick={() => { setOffset(0); setFilters((f) => ({
                               ...f, ftp_sign: f.ftp_sign === "NEGATIVE" ? undefined : "NEGATIVE" })); }}>
@@ -347,7 +345,7 @@ export default function Accounts() {
                    render: (r) => money(r.customer_interest), value: (r) => r.customer_interest },
                  { key: "src", label: "ROI source",
                    render: (r) => (
-                     <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                     <span style={{ fontSize: "var(--fs-xs)", color: "var(--text-muted)" }}>
                        {r.roi_source === "BANK_PROVIDED" ? "bank" : "derived"}
                      </span>
                    ),
@@ -356,7 +354,7 @@ export default function Accounts() {
 
         <div style={{ display: "flex", justifyContent: "space-between",
                       alignItems: "center", marginTop: 10 }}>
-          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+          <span style={{ fontSize: "var(--fs-sm)", color: "var(--text-muted)" }}>
             {offset + 1}–{Math.min(offset + PAGE, total)} of {total.toLocaleString()}
           </span>
           <div style={{ display: "flex", gap: 6 }}>

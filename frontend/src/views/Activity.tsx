@@ -83,10 +83,8 @@ export default function Activity() {
   const total = log.data?.total ?? 0;
   const shown = log.data?.items.length ?? 0;
 
-  const field: React.CSSProperties = {
-    background: "var(--surface-1)", border: "1px solid var(--border-strong)",
-    borderRadius: 7, padding: "6px 8px", fontSize: 12.5,
-  };
+  // Fields take the global form look.
+  const field: React.CSSProperties = {};
 
   async function show(entry: AuditEntry) {
     try { setOpen(await api.auditEntry(entry.id)); } catch { /* list stays usable */ }
@@ -150,7 +148,7 @@ export default function Activity() {
         {total > PAGE && (
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end",
                         marginTop: 10, alignItems: "center" }}>
-            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+            <span style={{ fontSize: "var(--fs-sm)", color: "var(--text-muted)" }}>
               Page {Math.floor(offset / PAGE) + 1} of {Math.ceil(total / PAGE)}
             </span>
             <MiniButton disabled={offset === 0}
@@ -186,16 +184,16 @@ export default function Activity() {
 function Side({ title, value }: { title: string; value: Record<string, unknown> | null }) {
   return (
     <div>
-      <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: ".05em",
+      <div style={{ fontSize: "var(--fs-xs)", fontWeight: 600, letterSpacing: ".05em",
                     textTransform: "uppercase", color: "var(--text-muted)",
                     marginBottom: 6 }}>{title}</div>
       {value
         ? <pre style={{
-            margin: 0, padding: "10px 12px", borderRadius: 8, fontSize: 12,
+            margin: 0, padding: "10px 12px", borderRadius: 8, fontSize: "var(--fs-sm)",
             background: "var(--surface-2)", border: "1px solid var(--border)",
             overflowX: "auto", lineHeight: 1.5,
           }}>{JSON.stringify(value, null, 2)}</pre>
-        : <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: 0 }}>
+        : <p style={{ fontSize: "var(--fs-base)", color: "var(--text-muted)", margin: 0 }}>
             No {title.toLowerCase()} state for this event.
           </p>}
     </div>

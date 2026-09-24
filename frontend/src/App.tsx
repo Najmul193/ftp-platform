@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import FilterBar from "./components/FilterBar";
-import { Button, Card, Pill } from "./components/ui";
+import { Icon, type IconName } from "./components/icons";
+import { Button, Card, IconButton, MiniButton, Pill } from "./components/ui";
 import { api } from "./api";
 import { AppProvider, currentView, useApp } from "./state";
 import Accounts from "./views/Accounts";
@@ -17,20 +18,47 @@ import Upload from "./views/Upload";
 
 //: Basic overview is first and is where a session lands after sign-in.
 //: `currentView` defaults to the same id, so the landing page and the first
-//: nav item cannot drift.
-const NAV = [
-  { id: "basic", label: "Basic overview", group: "Analyse" },
-  { id: "daily", label: "Daily", group: "Analyse" },
-  { id: "overview", label: "Overview", group: "Analyse" },
-  { id: "analytics", label: "Analytics", group: "Analyse" },
-  { id: "leaders", label: "Leaders", group: "Analyse" },
-  { id: "accounts", label: "Accounts", group: "Analyse" },
-  { id: "consolidated", label: "Consolidated", group: "Analyse" },
-  { id: "upload", label: "Upload", group: "Operate", perm: "UPLOAD_VIEW" },
-  { id: "admin", label: "Master data", group: "Operate", perm: "MASTER_BRANCH_VIEW" },
-  { id: "rates", label: "Rate configuration", group: "Operate", perm: "CONFIG_RATE_VIEW" },
-  { id: "activity", label: "Activity log", group: "Operate", perm: "AUDIT_VIEW" },
+//: nav item cannot drift. `desc` is the one line under the page title.
+const NAV: { id: string; label: string; group: string; icon: IconName;
+             desc: string; perm?: string }[] = [
+  { id: "basic", label: "Basic overview", group: "Analyse", icon: "dashboard",
+    desc: "Branch, product and side-by-side FTP profitability at a glance." },
+  { id: "daily", label: "Daily", group: "Analyse", icon: "calendar",
+    desc: "What needs attention, where the margin went, and whether the ratios moved." },
+  { id: "overview", label: "Overview", group: "Analyse", icon: "pie",
+    desc: "Trend, sources of margin and balance-sheet structure for the period." },
+  { id: "analytics", label: "Analytics", group: "Analyse", icon: "chart",
+    desc: "Variance, concentration and rate distribution across the book." },
+  { id: "leaders", label: "Leaders", group: "Analyse", icon: "trophy",
+    desc: "The best branches in each group, and which product leads where." },
+  { id: "accounts", label: "Accounts", group: "Analyse", icon: "list",
+    desc: "Where the book loses money, down to the individual account." },
+  { id: "consolidated", label: "Consolidated", group: "Analyse", icon: "layers",
+    desc: "Every account-day as one row, as in the Consolidated Data sheet." },
+  { id: "upload", label: "Upload", group: "Operate", icon: "upload", perm: "UPLOAD_VIEW",
+    desc: "Load bank data files and follow each batch through processing." },
+  { id: "admin", label: "Master data", group: "Operate", icon: "database",
+    perm: "MASTER_BRANCH_VIEW", desc: "The branch and product masters the calculation runs on." },
+  { id: "rates", label: "Rate configuration", group: "Operate", icon: "percent",
+    perm: "CONFIG_RATE_VIEW", desc: "FTP rate components in force, and how they have changed." },
+  { id: "activity", label: "Activity log", group: "Operate", icon: "history",
+    perm: "AUDIT_VIEW", desc: "Every change made in the system, who made it and when." },
 ];
+
+/** Below this width the sidebar leaves the layout and becomes a drawer. */
+const DRAWER_BELOW = 1024;
+
+function useNarrow() {
+  const q = `(max-width: ${DRAWER_BELOW - 1}px)`;
+  const [narrow, setNarrow] = useState(() => window.matchMedia(q).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(q);
+    const on = () => setNarrow(mq.matches);
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, [q]);
+  return narrow;
+}
 
 export default function App() {
   return (
@@ -41,11 +69,15 @@ export default function App() {
 }
 
 function Shell() {
-  const { me, ready, logout, can, theme, toggleTheme, dataInfo, lastSync, refreshData, filters } = useApp();
+  const { me, ready, can, dataInfo, lastSync, refreshData, filters } = useApp();
   const [view, setView] = useState(currentView());
+  const narrow = useNarrow();
+  // "1" expanded, "0" the icon rail -- the key predates the rail, when "0"
+  // meant hidden; the rail is what collapsing means now.
   const [navOpen, setNavOpen] = useState(
     () => (localStorage.getItem("ftp_nav_open") ?? "1") === "1",
   );
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(
     () => (localStorage.getItem("ftp_filters_open") ?? "1") === "1",
   );
@@ -54,10 +86,23 @@ function Shell() {
   useEffect(() => { localStorage.setItem("ftp_filters_open", filtersOpen ? "1" : "0"); }, [filtersOpen]);
 
   useEffect(() => {
-    const onHash = () => setView(currentView());
+    const onHash = () => { setView(currentView()); setDrawerOpen(false); };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
+
+  // The drawer is modal: Esc closes it and the page behind does not scroll.
+  useEffect(() => {
+    if (!drawerOpen || !narrow) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setDrawerOpen(false); };
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [drawerOpen, narrow]);
 
   if (!ready) {
     return <Centered><p style={{ color: "var(--text-muted)" }}>Loading…</p></Centered>;
@@ -72,146 +117,115 @@ function Shell() {
                     daily: Daily, overview: Overview, analytics: Analytics,
                     leaders: Leaders, accounts: Accounts, upload: Upload,
                     admin: Admin, rates: Rates, activity: Activity }[view] ?? Daily;
+  const page = NAV.find((n) => n.id === view) ?? NAV.find((n) => n.id === "daily")!;
 
   const activeFilterCount = (Object.entries(filters) as [string, unknown][]).reduce(
     (n, [, v]) => n + (Array.isArray(v) ? v.length : v ? 1 : 0), 0,
   );
 
+  const toggleNav = () => (narrow ? setDrawerOpen((v) => !v) : setNavOpen((v) => !v));
+
   return (
     <div style={{ display: "flex", minHeight: "100%", background: "var(--page)" }}>
-      {navOpen && (
-        <aside style={{
-          width: 196, flexShrink: 0, background: "var(--surface-1)",
-          borderRight: "1px solid var(--border)", display: "flex",
-          flexDirection: "column", position: "sticky", top: 0, height: "100vh",
-          paddingTop: "env(safe-area-inset-top, 0px)",
-        }}>
-          <div style={{ padding: "14px 16px 12px" }}>
-            <img src="/dataedge_logo.png" alt="Data Edge Ltd" style={{
-              width: "100%", maxHeight: 40, objectFit: "contain", objectPosition: "left",
-              display: "block",
+      {narrow ? (
+        drawerOpen && (
+          <>
+            <div onClick={() => setDrawerOpen(false)} aria-hidden style={{
+              position: "fixed", inset: 0, zIndex: 60, background: "var(--scrim)",
             }} />
-            <div style={{ fontSize: 10.5, color: "var(--text-muted)", marginTop: 6,
-                          fontWeight: 600, letterSpacing: ".04em" }}>
-              Funds Transfer Pricing · FTP Profitability
-            </div>
-          </div>
-
-          <nav style={{ flex: 1, padding: "0 8px", overflowY: "auto" }}>
-            {["Analyse", "Operate"].map((group) => {
-              const items = visible.filter((n) => n.group === group);
-              if (!items.length) return null;
-              return (
-                <div key={group} style={{ marginBottom: 14 }}>
-                  <div style={{
-                    fontSize: 10, fontWeight: 600, letterSpacing: ".08em",
-                    textTransform: "uppercase", color: "var(--text-muted)",
-                    padding: "0 8px 6px",
-                  }}>{group}</div>
-                  {items.map((n) => (
-                    <a key={n.id} href={`#/${n.id}`} style={{
-                      display: "block", padding: "7px 10px", borderRadius: 7,
-                      fontSize: 13, textDecoration: "none", marginBottom: 1,
-                      background: view === n.id ? "var(--surface-2)" : "transparent",
-                      color: view === n.id ? "var(--text-primary)" : "var(--text-secondary)",
-                      fontWeight: view === n.id ? 600 : 450,
-                    }}>{n.label}</a>
-                  ))}
-                </div>
-              );
-            })}
-          </nav>
-
-          <div style={{ padding: 12, borderTop: "1px solid var(--border)", fontSize: 11.5 }}>
-            <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>{me.full_name}</div>
-            <div style={{ color: "var(--text-muted)", marginBottom: 8 }}>{me.scope_label}</div>
-            <div style={{ display: "flex", gap: 6 }}>
-              <button onClick={toggleTheme} title="Switch theme" style={btn}>
-                {theme === "dark" ? "Light" : "Dark"}
-              </button>
-              <button onClick={logout} style={btn}>Sign out</button>
-            </div>
-          </div>
-        </aside>
+            <Sidebar items={visible} view={view} rail={false} drawer
+                     onClose={() => setDrawerOpen(false)} />
+          </>
+        )
+      ) : (
+        <Sidebar items={visible} view={view} rail={!navOpen} />
       )}
 
       <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
         <div className="masthead" style={{
           position: "sticky", top: "env(safe-area-inset-top, 0px)", zIndex: 30,
-          display: "flex", flexDirection: "column",
           borderBottom: "1px solid var(--border)",
         }}>
           <div style={{
-            display: "flex", alignItems: "center", gap: 8, padding: "6px 12px",
-            minHeight: 40,
+            display: "flex", alignItems: "center", gap: narrow ? 6 : 10,
+            padding: narrow ? "0 10px 0 8px" : "0 16px 0 12px", minHeight: 56,
           }}>
-            <button onClick={() => setNavOpen((v) => !v)} title="Toggle navigation" style={{
-              ...btn, padding: "4px 8px", fontSize: 15, lineHeight: 1,
-            }} aria-label="Show or hide navigation">
-              <span aria-hidden>☰</span>
-            </button>
+            <IconButton icon={narrow ? "menu" : "panelLeft"} onClick={toggleNav}
+                        label={narrow ? "Open navigation"
+                          : navOpen ? "Collapse sidebar" : "Expand sidebar"} />
 
-            {!navOpen && (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                <img src="/dataedge_logo.png" alt="Data Edge Ltd" style={{
-                  height: 24, width: "auto", maxWidth: 170, objectFit: "contain",
-                }} />
-              </div>
+            {narrow && (
+              <BrandLogo height={24} />
             )}
 
             <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center" }}>
-              {!filtersOpen && <FilterBar collapsed />}
+              {!filtersOpen && !narrow && <FilterBar collapsed />}
             </div>
 
-            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-              {activeFilterCount > 0 && (
-                <span style={{
-                  fontSize: 10.5, fontWeight: 600, color: "var(--series-1)",
-                }}>{activeFilterCount} filter{activeFilterCount === 1 ? "" : "s"}</span>
+            {/* Live state is stated, never implied: the page says how fresh it
+                is rather than silently showing stale numbers. */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8,
+                          fontSize: "var(--fs-sm)", color: "var(--text-muted)" }}>
+              <Pill tone={dataInfo?.last_batch_status === "COMPLETED" ? "good" : "warning"}>
+                {dataInfo?.latest_business_date
+                  ? `${narrow ? "" : "Data to "}${dataInfo.latest_business_date}`
+                  : "No data"}
+              </Pill>
+              {!narrow && lastSync && (
+                <span className="tnum" title={dataInfo?.last_batch_ref
+                  ? `Last batch ${dataInfo.last_batch_ref}` : undefined}>
+                  checked {lastSync.toLocaleTimeString("en-GB")}
+                </span>
               )}
-              <button onClick={() => setFiltersOpen((v) => !v)} title="Show or hide global filters"
-                      style={{ ...btn, fontWeight: filtersOpen ? 600 : 500 }}
-                      aria-expanded={filtersOpen}>
-                <span aria-hidden>{filtersOpen ? "◦" : "◦"}</span> Filters
-              </button>
+              <IconButton icon="refresh" label="Refresh now" onClick={refreshData} />
             </div>
+
+            {!narrow && (
+              <span aria-hidden style={{ width: 1, height: 24, background: "var(--border)" }} />
+            )}
+
+            <MiniButton icon="filter" active={filtersOpen}
+                        onClick={() => setFiltersOpen((v) => !v)}
+                        title="Show or hide global filters">
+              {narrow ? <span style={{ position: "absolute", width: 1, height: 1,
+                                       overflow: "hidden", clip: "rect(0 0 0 0)" }}>Filters</span>
+                : "Filters"}
+              {activeFilterCount > 0 && (
+                <span className="tnum" style={{
+                  minWidth: 18, height: 18, padding: "0 5px", borderRadius: 999,
+                  background: "var(--accent-solid)", color: "#fff",
+                  fontSize: "var(--fs-xs)", fontWeight: 600, lineHeight: "18px",
+                  textAlign: "center",
+                }}>{activeFilterCount}</span>
+              )}
+            </MiniButton>
           </div>
 
           {filtersOpen && <FilterBar />}
         </div>
 
-        <div className="canvas" style={{
-          display: "flex", alignItems: "center", gap: 10, padding: "8px 20px 0",
-          fontSize: 11.5, color: "var(--text-muted)", flexWrap: "wrap",
-        }}>
-          {/* Live state is stated, never implied: the page says how fresh it is
-              rather than silently showing stale numbers. */}
-          <Pill tone={dataInfo?.last_batch_status === "COMPLETED" ? "good" : "warning"}>
-            {dataInfo?.latest_business_date
-              ? `data to ${dataInfo.latest_business_date}`
-              : "no data"}
-          </Pill>
-          {lastSync && <span>checked {lastSync.toLocaleTimeString("en-GB")}</span>}
-          {dataInfo?.last_batch_ref && <span>· last batch {dataInfo.last_batch_ref}</span>}
-          <button onClick={refreshData} style={{ ...btn, marginLeft: "auto" }}>
-            Refresh now
-          </button>
-        </div>
-
-        <div className="canvas" style={{ padding: "12px 20px 28px", flex: 1, minWidth: 0 }}>
+        <div style={{ padding: narrow ? "20px 16px 28px" : "24px 24px 32px",
+                      flex: 1, minWidth: 0 }}>
+          <header style={{ marginBottom: 18 }}>
+            <h1 style={{ margin: 0, fontSize: "var(--fs-lg)", fontWeight: 650,
+                         letterSpacing: "-.01em", color: "var(--text-primary)" }}>
+              {page.label}
+            </h1>
+            <p style={{ margin: "2px 0 0", fontSize: "var(--fs-base)",
+                        color: "var(--text-secondary)" }}>{page.desc}</p>
+          </header>
           <Current />
         </div>
 
         <footer style={{
           display: "flex", alignItems: "center", justifyContent: "center",
-          gap: 8, padding: "14px 20px 20px", fontSize: 11.5,
-          color: "var(--text-muted)", flexWrap: "wrap",
-          borderTop: "1px solid var(--border)", background: "var(--surface-1)",
+          gap: 8, padding: "16px 24px 24px", fontSize: "var(--fs-sm)",
+          color: "var(--text-secondary)", flexWrap: "wrap",
         }}>
           <span>© {new Date().getFullYear()} Data Edge Ltd</span>
-          <span aria-hidden style={{ opacity: .6 }}>·</span>
+          <span aria-hidden style={{ opacity: .5 }}>·</span>
           <span>Powered by Data Edge</span>
-          <span aria-hidden style={{ opacity: .6 }}>·</span>
+          <span aria-hidden style={{ opacity: .5 }}>·</span>
           <span>FTP Profitability — Funds Transfer Pricing analytics</span>
         </footer>
       </main>
@@ -219,11 +233,161 @@ function Shell() {
   );
 }
 
-const btn: React.CSSProperties = {
-  border: "1px solid var(--border)", background: "transparent",
-  color: "var(--text-secondary)", borderRadius: 6, padding: "3px 9px",
-  fontSize: 11.5, cursor: "pointer",
-};
+/** The navigation column: full, as an icon rail, or as a drawer on narrow
+ *  screens. The rail keeps every destination one click away while giving the
+ *  width back to the charts. */
+function Sidebar({ items, view, rail, drawer = false, onClose }: {
+  items: typeof NAV; view: string; rail: boolean; drawer?: boolean; onClose?: () => void;
+}) {
+  const { me, logout, theme, toggleTheme } = useApp();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const initials = (me?.full_name ?? "?").split(/\s+/).filter(Boolean)
+    .slice(0, 2).map((w) => w[0]!.toUpperCase()).join("");
+
+  const avatar = (
+    <span aria-hidden style={{
+      width: 32, height: 32, borderRadius: 999, flexShrink: 0,
+      display: "grid", placeItems: "center",
+      background: "var(--accent-soft)", color: "var(--accent)",
+      fontSize: "var(--fs-sm)", fontWeight: 700,
+    }}>{initials}</span>
+  );
+  const themeIcon = theme === "dark" ? "sun" : "moon";
+  const themeLabel = theme === "dark" ? "Switch to light theme" : "Switch to dark theme";
+
+  return (
+    <aside className={rail ? "rail" : undefined} style={{
+      width: rail ? 64 : 240, flexShrink: 0, background: "var(--chrome)",
+      borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column",
+      height: "100vh", paddingTop: "env(safe-area-inset-top, 0px)",
+      ...(drawer
+        ? { position: "fixed", left: 0, top: 0, zIndex: 70, boxShadow: "var(--shadow-md)" }
+        : { position: "sticky", top: 0 }),
+    }}>
+      <div style={{
+        height: 56, display: "flex", alignItems: "center", flexShrink: 0,
+        padding: rail ? 0 : "0 16px", justifyContent: rail ? "center" : "space-between",
+        borderBottom: "1px solid var(--border)",
+      }}>
+        {rail ? (
+          <img src="/dataedge_mark.png" alt="Data Edge" style={{ width: 30, height: 30 }} />
+        ) : (
+          <>
+            <div style={{ minWidth: 0 }}>
+              <BrandLogo height={30} />
+            </div>
+            {drawer && <IconButton icon="close" label="Close navigation" onClick={onClose} />}
+          </>
+        )}
+      </div>
+      {!rail && (
+        <div style={{ padding: "12px 16px 0", fontSize: "var(--fs-xs)", fontWeight: 600,
+                      letterSpacing: ".04em", color: "var(--text-secondary)" }}>
+          FTP PROFITABILITY
+        </div>
+      )}
+
+      <nav aria-label="Main" style={{ flex: 1, padding: rail ? "12px 10px" : "8px 12px",
+                                       overflowY: "auto" }}>
+        {["Analyse", "Operate"].map((group) => {
+          const groupItems = items.filter((n) => n.group === group);
+          if (!groupItems.length) return null;
+          return (
+            <div key={group} style={{ marginTop: 12 }}>
+              {rail ? (
+                <div aria-hidden style={{ height: 1, background: "var(--border)",
+                                          margin: "0 8px 10px" }} />
+              ) : (
+                <div style={{
+                  fontSize: "var(--fs-xs)", fontWeight: 600, letterSpacing: ".06em",
+                  textTransform: "uppercase", color: "var(--text-muted)",
+                  padding: "0 10px 6px",
+                }}>{group}</div>
+              )}
+              {groupItems.map((n) => (
+                <a key={n.id} href={`#/${n.id}`} className="nav-item"
+                   aria-current={view === n.id ? "page" : undefined}
+                   title={rail ? n.label : undefined}
+                   aria-label={rail ? n.label : undefined}>
+                  <Icon name={n.icon} />
+                  {!rail && n.label}
+                </a>
+              ))}
+            </div>
+          );
+        })}
+      </nav>
+
+      <div style={{ padding: rail ? "12px 0" : 12, borderTop: "1px solid var(--border)",
+                    position: "relative" }}>
+        {rail ? (
+          <div style={{ display: "grid", placeItems: "center" }}>
+            <button type="button" onClick={() => setMenuOpen((v) => !v)}
+                    aria-label={`${me?.full_name ?? "Account"} — account menu`}
+                    aria-expanded={menuOpen}
+                    style={{ padding: 0, border: "none", background: "none",
+                             cursor: "pointer", borderRadius: 999 }}>
+              {avatar}
+            </button>
+            {menuOpen && (
+              <div role="menu" style={{
+                position: "absolute", left: 56, bottom: 10, zIndex: 80, width: 220,
+                background: "var(--surface-1)", border: "1px solid var(--border)",
+                borderRadius: "var(--radius-sm)", boxShadow: "var(--shadow-md)", padding: 8,
+              }}>
+                <div style={{ padding: "4px 8px 8px" }}>
+                  <div style={{ fontSize: "var(--fs-base)", fontWeight: 600 }}>{me?.full_name}</div>
+                  <div style={{ fontSize: "var(--fs-sm)", color: "var(--text-muted)" }}>
+                    {me?.scope_label}
+                  </div>
+                </div>
+                <Button variant="ghost" size="sm" icon={themeIcon} style={{ width: "100%",
+                        justifyContent: "flex-start" }}
+                        onClick={() => { toggleTheme(); setMenuOpen(false); }}>
+                  {theme === "dark" ? "Light theme" : "Dark theme"}
+                </Button>
+                <Button variant="ghost" size="sm" icon="logout" style={{ width: "100%",
+                        justifyContent: "flex-start" }} onClick={logout}>
+                  Sign out
+                </Button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {avatar}
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: "var(--fs-base)", fontWeight: 600,
+                            color: "var(--text-primary)", overflow: "hidden",
+                            textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {me?.full_name}
+              </div>
+              <div style={{ fontSize: "var(--fs-sm)", color: "var(--text-muted)",
+                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {me?.scope_label}
+              </div>
+            </div>
+            <IconButton icon={themeIcon} label={themeLabel} onClick={toggleTheme} />
+            <IconButton icon="logout" label="Sign out" onClick={logout} />
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+/** The wordmark in whichever cut suits the theme; CSS picks, so no flash.
+ *  The images are trimmed to the artwork, so `height` is the letterform's. */
+function BrandLogo({ height, center = false }: { height: number; center?: boolean }) {
+  const style: React.CSSProperties = { height, width: "auto", maxWidth: "100%",
+                                       ...(center ? { marginInline: "auto" } : {}) };
+  return (
+    <>
+      <img src="/dataedge_wordmark.png" alt="Data Edge Ltd" className="logo-light" style={style} />
+      <img src="/dataedge_wordmark_dark.png" alt="Data Edge Ltd" className="logo-dark" style={style} />
+    </>
+  );
+}
 
 function Centered({ children }: { children: React.ReactNode }) {
   return <div style={{ display: "grid", placeItems: "center", minHeight: "100vh",
@@ -239,8 +403,7 @@ function ForcePasswordChange() {
   const [busy, setBusy] = useState(false);
 
   const field: React.CSSProperties = {
-    width: "100%", background: "var(--surface-1)", borderRadius: 8,
-    border: "1px solid var(--border-strong)", padding: "9px 11px", fontSize: 14,
+    width: "100%", minHeight: 38, fontSize: "var(--fs-md)",
   };
   const tooShort = next.length > 0 && next.length < 12;
   const mismatch = confirm.length > 0 && confirm !== next;
@@ -259,15 +422,13 @@ function ForcePasswordChange() {
     <Centered>
       <div style={{ width: "min(400px, 92vw)" }}>
         <div style={{ textAlign: "center", marginBottom: 14 }}>
-          <img src="/dataedge_logo.png" alt="Data Edge Ltd" style={{
-            height: 32, width: "auto", objectFit: "contain", marginInline: "auto",
-          }} />
+          <BrandLogo height={36} center />
         </div>
         <Card title="Choose a new password"
               subtitle={`${me!.full_name} — the account is still on its initial password`}>
           <form onSubmit={submit} style={{ display: "flex", flexDirection: "column",
                                            gap: 12, padding: "6px 4px 2px" }}>
-            <p style={{ margin: 0, fontSize: 12.5, color: "var(--text-secondary)" }}>
+            <p style={{ margin: 0, fontSize: "var(--fs-base)", color: "var(--text-secondary)" }}>
               The seeded password is known to anyone who can read the setup
               notes, so it has to be replaced before the account can be used.
             </p>
@@ -275,7 +436,7 @@ function ForcePasswordChange() {
                ["New password", next, setNext, "new-password"],
                ["Confirm new password", confirm, setConfirm, "new-password"]] as const)
               .map(([label, value, set, ac]) => (
-              <label key={label} style={{ fontSize: 12 }}>
+              <label key={label} style={{ fontSize: "var(--fs-sm)" }}>
                 <span style={{ display: "block", marginBottom: 4,
                                color: "var(--text-muted)" }}>{label}</span>
                 <input style={field} type="password" value={value} autoComplete={ac}
@@ -283,17 +444,17 @@ function ForcePasswordChange() {
               </label>
             ))}
             {tooShort && (
-              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+              <span style={{ fontSize: "var(--fs-sm)", color: "var(--text-muted)" }}>
                 At least 12 characters.
               </span>
             )}
             {mismatch && (
-              <span style={{ fontSize: 12, color: "var(--status-critical)" }}>
+              <span style={{ fontSize: "var(--fs-sm)", color: "var(--status-critical)" }}>
                 The two new passwords do not match.
               </span>
             )}
             {error && (
-              <div style={{ fontSize: 12.5 }}>
+              <div style={{ fontSize: "var(--fs-base)" }}>
                 <Pill tone="critical">Could not change</Pill>
                 <span style={{ marginLeft: 6, color: "var(--text-secondary)" }}>{error}</span>
               </div>
@@ -304,7 +465,7 @@ function ForcePasswordChange() {
             </Button>
             <button type="button" onClick={logout} style={{
               background: "none", border: "none", color: "var(--text-muted)",
-              fontSize: 12, cursor: "pointer", padding: 0, textAlign: "center",
+              fontSize: "var(--fs-sm)", cursor: "pointer", padding: 0, textAlign: "center",
             }}>Sign out instead</button>
           </form>
         </Card>
@@ -329,13 +490,11 @@ function Login() {
   }
 
   const field: React.CSSProperties = {
-    width: "100%", background: "var(--surface-1)", borderRadius: 8,
-    border: "1px solid var(--border-strong)", padding: "10px 12px", fontSize: 14,
-    transition: "border-color .12s ease",
+    width: "100%", minHeight: 40, padding: "0 12px", fontSize: "var(--fs-md)",
   };
   const group: React.CSSProperties = {
-    fontSize: 12, display: "block", marginBottom: 6, color: "var(--text-secondary)",
-    fontWeight: 600, letterSpacing: ".02em",
+    fontSize: "var(--fs-sm)", display: "block", marginBottom: 6,
+    color: "var(--text-secondary)", fontWeight: 600,
   };
 
   return (
@@ -345,20 +504,18 @@ function Login() {
         <div style={{ width: "min(400px, 100%)", display: "flex", flexDirection: "column" }}>
           {/* Brand */}
           <div style={{ textAlign: "center", marginBottom: 26 }}>
-            <img src="/dataedge_logo.png" alt="Data Edge Ltd"
-                 style={{ height: 40, width: "auto", maxWidth: "100%",
-                          objectFit: "contain", marginInline: "auto" }} />
+            <BrandLogo height={44} center />
           </div>
 
           {/* Card */}
           <div style={{
-            background: "var(--surface-1)", borderRadius: 14,
-            border: "1px solid var(--border)", boxShadow: "var(--shadow)",
-            padding: "28px",
+            background: "var(--surface-1)", borderRadius: "var(--radius)",
+            border: "1px solid var(--border)", boxShadow: "var(--shadow-md)",
+            padding: "32px 28px 28px",
           }}>
-            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700,
+            <h1 style={{ margin: 0, fontSize: "var(--fs-lg)", fontWeight: 650,
                          color: "var(--text-primary)" }}>Sign in</h1>
-            <p style={{ margin: "4px 0 22px", fontSize: 13, color: "var(--text-muted)",
+            <p style={{ margin: "4px 0 22px", fontSize: "var(--fs-base)", color: "var(--text-muted)",
                         lineHeight: 1.5 }}>
               FTP Profitability — Funds Transfer Pricing analytics.
             </p>
@@ -378,9 +535,11 @@ function Login() {
 
               {error && (
                 <div style={{
-                  display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12.5,
-                  color: "var(--status-critical)", background: "var(--surface-sunken)",
-                  border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px",
+                  display: "flex", gap: 8, alignItems: "flex-start", fontSize: "var(--fs-base)",
+                  color: "var(--status-critical)",
+                  background: "color-mix(in srgb, var(--status-critical) var(--tint), transparent)",
+                  border: "1px solid color-mix(in srgb, var(--status-critical) 25%, transparent)",
+                  borderRadius: "var(--radius-sm)", padding: "8px 10px",
                 }}>
                   <span aria-hidden style={{ fontWeight: 700 }}>⚠</span>
                   <span>{error}</span>
@@ -388,14 +547,14 @@ function Login() {
               )}
 
               <Button type="submit" variant="primary" disabled={busy || !password}
-                      style={{ width: "100%", padding: "10px 14px", marginTop: 2 }}>
+                      style={{ width: "100%", height: 40, marginTop: 4 }}>
                 {busy ? "Signing in…" : "Sign in"}
               </Button>
             </form>
           </div>
 
           {/* Footer */}
-          <p style={{ textAlign: "center", margin: "20px 0 0", fontSize: 11.5,
+          <p style={{ textAlign: "center", margin: "20px 0 0", fontSize: "var(--fs-sm)",
                       color: "var(--text-muted)" }}>
             © {new Date().getFullYear()} Data Edge Ltd · Powered by Data Edge
           </p>

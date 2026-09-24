@@ -187,8 +187,8 @@ export default function Leaders() {
                 }}>
                   <div style={{ display: "flex", justifyContent: "space-between",
                                 alignItems: "baseline", marginBottom: 8, gap: 8 }}>
-                    <b style={{ fontSize: 13 }}>{g.group_label}</b>
-                    <span className="tnum" style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                    <b style={{ fontSize: "var(--fs-base)" }}>{g.group_label}</b>
+                    <span className="tnum" style={{ fontSize: "var(--fs-sm)", color: "var(--text-muted)" }}>
                       {money(g.group_net_ftp_profit)}
                     </span>
                   </div>
@@ -204,20 +204,20 @@ export default function Leaders() {
                       borderBottom: "1px solid var(--grid)",
                     }}>
                       <span style={{
-                        fontSize: 11, fontWeight: 700,
+                        fontSize: "var(--fs-xs)", fontWeight: 700,
                         color: e.rank === 1 ? "var(--series-1)" : "var(--text-muted)",
                       }}>#{e.rank}</span>
-                      <span style={{ fontSize: 12.5, color: "var(--text-primary)",
+                      <span style={{ fontSize: "var(--fs-base)", color: "var(--text-primary)",
                                      overflow: "hidden", textOverflow: "ellipsis",
                                      whiteSpace: "nowrap" }}>{e.label}</span>
-                      <span className="tnum" style={{ fontSize: 12,
+                      <span className="tnum" style={{ fontSize: "var(--fs-sm)",
                                                       color: "var(--text-secondary)" }}>
                         {metric === "profit" ? money(e.net_ftp_profit) : pct(e.yield_pct, 4)}
                       </span>
                     </button>
                   ))}
                   {g.laggard && g.member_count > board.data!.top && (
-                    <p style={{ margin: "8px 0 0", fontSize: 11, color: "var(--text-muted)" }}>
+                    <p style={{ margin: "8px 0 0", fontSize: "var(--fs-xs)", color: "var(--text-muted)" }}>
                       Weakest: {g.laggard.label} at {money(g.laggard.net_ftp_profit)}
                     </p>
                   )}
@@ -256,7 +256,7 @@ export default function Leaders() {
                        ariaLabel={`Net FTP profit by product, grouped by ${area}`} />
               )}
               {tailProducts.length > 0 && (
-                <p style={{ margin: "4px 4px 0", fontSize: 11.5,
+                <p style={{ margin: "4px 4px 0", fontSize: "var(--fs-sm)",
                             color: "var(--text-muted)" }}>
                   The palette carries eight series, so the smallest{" "}
                   {tailProducts.length} of {allProducts.length} products —{" "}
@@ -314,12 +314,12 @@ function Row({ label, value, sub, tone }: {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 8,
                   alignItems: "start" }}>
-      <span aria-hidden style={{ color, fontSize: 11, lineHeight: "18px" }}>{icon}</span>
+      <span aria-hidden style={{ color, fontSize: "var(--fs-xs)", lineHeight: "18px" }}>{icon}</span>
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: ".05em",
+        <div style={{ fontSize: "var(--fs-xs)", fontWeight: 600, letterSpacing: ".05em",
                       textTransform: "uppercase", color: "var(--text-muted)" }}>{label}</div>
         <div style={{
-          fontSize: 13.5, fontWeight: 600,
+          fontSize: "var(--fs-md)", fontWeight: 600,
           // The weakest member is named in the status colour so the eye finds
           // it without reading all three rows. Only `critical` is coloured:
           // if the good rows were green too, nothing would stand out. The
@@ -330,7 +330,7 @@ function Row({ label, value, sub, tone }: {
         }}>
           {value}
         </div>
-        <div className="tnum" style={{ fontSize: 11.5, color: "var(--text-secondary)" }}>
+        <div className="tnum" style={{ fontSize: "var(--fs-sm)", color: "var(--text-secondary)" }}>
           {sub}
         </div>
       </div>

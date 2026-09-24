@@ -5,6 +5,11 @@
  * colour is defined on bare :root first, so no value exists only inside a media
  * query or a [data-theme] block.
  *
+ * Layering: a cool-grey canvas (--page) carries white cards (--surface-1); the
+ * sidebar and top bar are --chrome. In dark mode depth is carried by lightness
+ * -- canvas darkest, chrome a step up, cards above that -- because shadows all
+ * but vanish on a dark ground.
+ *
  * Categorical slots are assigned in fixed order and never cycled; colour
  * follows the entity, never its rank, so filtering a series out never repaints
  * the survivors.
@@ -13,19 +18,30 @@
 :root {
   color-scheme: light;
 
-  --page:            #f9f9f7;
-  --surface-1:       #fcfcfb;
-  --surface-2:       #f3f2ee;
-  --surface-sunken:  #efeeea;
+  --page:            #e8ebf0;  /* cool-grey canvas */
+  --chrome:          #ffffff;  /* sidebar and top bar */
+  --surface-1:       #ffffff;
+  --surface-2:       #f5f7fa;
+  --surface-sunken:  #eef1f5;
 
-  --text-primary:    #0b0b0b;
-  --text-secondary:  #52514e;
-  --text-muted:      #898781;
+  --text-primary:    #101828;
+  --text-secondary:  #475467;  /* the only ink set straight on the canvas */
+  --text-muted:      #5d6679;  /* 5.8:1 on white, 4.8:1 on the canvas */
 
-  --grid:            #e1e0d9;
-  --axis:            #c3c2b7;
-  --border:          rgba(11, 11, 11, 0.10);
-  --border-strong:   rgba(11, 11, 11, 0.18);
+  --grid:            #eaecf0;
+  --axis:            #d0d5dd;
+  --border:          #e4e7ec;
+  --border-strong:   #d0d5dd;
+  --field-border:    #98a2b3;  /* form fields: 2.6:1, the edge you type into */
+
+  /* Brand accent: the indigo of the Data Edge wordmark. Interactive state
+   * only -- primary actions, the current page, focus -- never data. */
+  --accent:          #2f35a8;
+  --accent-hover:    #262b8c;
+  --accent-soft:     #eef0fb;
+  --accent-solid:    #2f35a8;  /* fill behind white text */
+  --accent-solid-hover: #262b8c;
+  --tint:            12%;      /* strength of soft status fills */
 
   /* Categorical - fixed order */
   --series-1: #2a78d6;  /* blue    */
@@ -52,60 +68,59 @@
   --seq-550: #1c5cab; --seq-700: #0d366b;
 
   /* Status - reserved, never reused as a series */
-  --status-good:     #0ca30c;
-  --status-warning:  #fab219;
-  --status-serious:  #ec835a;
-  --status-critical: #d03b3b;
-  --delta-up:        #006300;
-  --delta-down:      #d03b3b;
+  --status-good:     #067647;  /* each >= 4.5:1 on its own soft pill */
+  --status-warning:  #b54708;
+  --status-serious:  #c4622f;
+  --status-critical: #b42318;
+  --delta-up:        #067647;
+  --delta-down:      #b42318;
 
-  --shadow: 0 1px 2px rgba(11,11,11,.04), 0 4px 12px rgba(11,11,11,.04);
-  --radius: 10px;
-  --font: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --shadow-sm: 0 1px 2px rgba(16,24,40,.05);
+  --shadow-md: 0 1px 3px rgba(16,24,40,.08), 0 1px 2px rgba(16,24,40,.04);
+  --shadow:    var(--shadow-sm);
+  --print:     url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27200%27%20height%3D%2756%27%3E%3Cg%20fill%3D%27%232f35a8%27%20font-family%3D%27Georgia%2CTimes%20New%20Roman%2Cserif%27%20font-size%3D%2716%27%20font-weight%3D%27600%27%20text-anchor%3D%27middle%27%3E%3Ctext%20x%3D%2720%27%20y%3D%2720%27%3E%E0%A7%B3%3C%2Ftext%3E%3Ctext%20x%3D%2760%27%20y%3D%2720%27%3E%24%3C%2Ftext%3E%3Ctext%20x%3D%27100%27%20y%3D%2720%27%3E%E2%82%AC%3C%2Ftext%3E%3Ctext%20x%3D%27140%27%20y%3D%2720%27%3E%C2%A3%3C%2Ftext%3E%3Ctext%20x%3D%27180%27%20y%3D%2720%27%3E%C2%A5%3C%2Ftext%3E%3Ctext%20x%3D%270%27%20y%3D%2748%27%3E%E2%82%AC%3C%2Ftext%3E%3Ctext%20x%3D%2740%27%20y%3D%2748%27%3E%C2%A3%3C%2Ftext%3E%3Ctext%20x%3D%2780%27%20y%3D%2748%27%3E%C2%A5%3C%2Ftext%3E%3Ctext%20x%3D%27120%27%20y%3D%2748%27%3E%E0%A7%B3%3C%2Ftext%3E%3Ctext%20x%3D%27160%27%20y%3D%2748%27%3E%24%3C%2Ftext%3E%3Ctext%20x%3D%27200%27%20y%3D%2748%27%3E%E2%82%AC%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+  --print-opacity: .13;
+  --scrim:     rgba(16,24,40,.45);
+
+  /* Scale */
+  --radius:    12px;
+  --radius-sm: 8px;
+  --radius-xs: 6px;
+  --fs-xs:   11px;
+  --fs-sm:   12px;
+  --fs-base: 13px;
+  --fs-md:   14px;
+  --fs-lg:   18px;
+  --fs-xl:   28px;
+  --control-h: 32px;
+
+  --font: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
-/* OS preference - guarded so an explicit light stamp still wins. */
+/* Dark: one set of values, reached two ways -- the OS preference (guarded so
+ * an explicit light stamp still wins) and the explicit toggle. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    color-scheme: dark;
-    --page:           #0d0d0d;
-    --surface-1:      #1a1a19;
-    --surface-2:      #222221;
-    --surface-sunken: #131312;
-    --text-primary:   #ffffff;
-    --text-secondary: #c3c2b7;
-    --text-muted:     #898781;
-    --grid:           #2c2c2a;
-    --axis:           #383835;
-    --border:         rgba(255,255,255,0.10);
-    --border-strong:  rgba(255,255,255,0.20);
-    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
-    --series-4: #c98500; --series-5: #d55181; --series-6: #008300;
-    --series-7: #9085e9; --series-8: #e66767;
-    --div-neg-3: #cde2fb; --div-neg-2: #3987e5; --div-neg-1: #1c5cab;
-    --div-mid:   #383835;
-    --div-pos-1: #7a2626; --div-pos-2: #d03b3b; --div-pos-3: #f3b6b6;
-    --seq-100: #0d366b; --seq-250: #1c5cab; --seq-400: #3987e5;
-    --seq-550: #86b6ef; --seq-700: #cde2fb;
-    --delta-up: #0ca30c;
-    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 12px rgba(0,0,0,.25);
-  }
-}
-
-/* Explicit toggle wins in both directions. */
-:root[data-theme="dark"] {
   color-scheme: dark;
-  --page:           #0d0d0d;
-  --surface-1:      #1a1a19;
-  --surface-2:      #222221;
-  --surface-sunken: #131312;
-  --text-primary:   #ffffff;
-  --text-secondary: #c3c2b7;
-  --text-muted:     #898781;
-  --grid:           #2c2c2a;
-  --axis:           #383835;
-  --border:         rgba(255,255,255,0.10);
-  --border-strong:  rgba(255,255,255,0.20);
+  --page:           #0e1015;
+  --chrome:         #13161d;
+  --surface-1:      #1a1e27;
+  --surface-2:      #222733;
+  --surface-sunken: #11141a;
+  --text-primary:   #f2f4f7;
+  --text-secondary: #b4bcc8;
+  --text-muted:     #8a94a6;
+  --grid:           #262b36;
+  --axis:           #343b48;
+  --border:         rgba(255,255,255,0.08);
+  --border-strong:  rgba(255,255,255,0.14);
+  --field-border:   rgba(255,255,255,0.26);
+  --accent:         #8b90f0;
+  --accent-hover:   #a4a8f4;
+  --accent-soft:    rgba(139,144,240,0.14);
+  --accent-solid:   #5a60d6;
+  --accent-solid-hover: #4c52c4;
+  --tint:           16%;
   --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
   --series-4: #c98500; --series-5: #d55181; --series-6: #008300;
   --series-7: #9085e9; --series-8: #e66767;
@@ -114,8 +129,61 @@
   --div-pos-1: #7a2626; --div-pos-2: #d03b3b; --div-pos-3: #f3b6b6;
   --seq-100: #0d366b; --seq-250: #1c5cab; --seq-400: #3987e5;
   --seq-550: #86b6ef; --seq-700: #cde2fb;
-  --delta-up: #0ca30c;
-  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 12px rgba(0,0,0,.25);
+  --status-good:     #3ccb6a;
+  --status-warning:  #f5b83d;
+  --status-serious:  #f09a70;
+  --status-critical: #f07474;
+  --delta-up:        #3ccb6a;
+  --delta-down:      #f07474;
+  --shadow-sm: inset 0 1px 0 rgba(255,255,255,.04), 0 1px 2px rgba(0,0,0,.4);
+  --shadow-md: inset 0 1px 0 rgba(255,255,255,.04), 0 4px 16px rgba(0,0,0,.45);
+  --shadow: var(--shadow-sm);
+  --print: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27200%27%20height%3D%2756%27%3E%3Cg%20fill%3D%27%23c9cbf8%27%20font-family%3D%27Georgia%2CTimes%20New%20Roman%2Cserif%27%20font-size%3D%2716%27%20font-weight%3D%27600%27%20text-anchor%3D%27middle%27%3E%3Ctext%20x%3D%2720%27%20y%3D%2720%27%3E%E0%A7%B3%3C%2Ftext%3E%3Ctext%20x%3D%2760%27%20y%3D%2720%27%3E%24%3C%2Ftext%3E%3Ctext%20x%3D%27100%27%20y%3D%2720%27%3E%E2%82%AC%3C%2Ftext%3E%3Ctext%20x%3D%27140%27%20y%3D%2720%27%3E%C2%A3%3C%2Ftext%3E%3Ctext%20x%3D%27180%27%20y%3D%2720%27%3E%C2%A5%3C%2Ftext%3E%3Ctext%20x%3D%270%27%20y%3D%2748%27%3E%E2%82%AC%3C%2Ftext%3E%3Ctext%20x%3D%2740%27%20y%3D%2748%27%3E%C2%A3%3C%2Ftext%3E%3Ctext%20x%3D%2780%27%20y%3D%2748%27%3E%C2%A5%3C%2Ftext%3E%3Ctext%20x%3D%27120%27%20y%3D%2748%27%3E%E0%A7%B3%3C%2Ftext%3E%3Ctext%20x%3D%27160%27%20y%3D%2748%27%3E%24%3C%2Ftext%3E%3Ctext%20x%3D%27200%27%20y%3D%2748%27%3E%E2%82%AC%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+  --print-opacity: .10;
+  --scrim: rgba(0,0,0,.6);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page:           #0e1015;
+  --chrome:         #13161d;
+  --surface-1:      #1a1e27;
+  --surface-2:      #222733;
+  --surface-sunken: #11141a;
+  --text-primary:   #f2f4f7;
+  --text-secondary: #b4bcc8;
+  --text-muted:     #8a94a6;
+  --grid:           #262b36;
+  --axis:           #343b48;
+  --border:         rgba(255,255,255,0.08);
+  --border-strong:  rgba(255,255,255,0.14);
+  --field-border:   rgba(255,255,255,0.26);
+  --accent:         #8b90f0;
+  --accent-hover:   #a4a8f4;
+  --accent-soft:    rgba(139,144,240,0.14);
+  --accent-solid:   #5a60d6;
+  --accent-solid-hover: #4c52c4;
+  --tint:           16%;
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+  --series-4: #c98500; --series-5: #d55181; --series-6: #008300;
+  --series-7: #9085e9; --series-8: #e66767;
+  --div-neg-3: #cde2fb; --div-neg-2: #3987e5; --div-neg-1: #1c5cab;
+  --div-mid:   #383835;
+  --div-pos-1: #7a2626; --div-pos-2: #d03b3b; --div-pos-3: #f3b6b6;
+  --seq-100: #0d366b; --seq-250: #1c5cab; --seq-400: #3987e5;
+  --seq-550: #86b6ef; --seq-700: #cde2fb;
+  --status-good:     #3ccb6a;
+  --status-warning:  #f5b83d;
+  --status-serious:  #f09a70;
+  --status-critical: #f07474;
+  --delta-up:        #3ccb6a;
+  --delta-down:      #f07474;
+  --shadow-sm: inset 0 1px 0 rgba(255,255,255,.04), 0 1px 2px rgba(0,0,0,.4);
+  --shadow-md: inset 0 1px 0 rgba(255,255,255,.04), 0 4px 16px rgba(0,0,0,.45);
+  --shadow: var(--shadow-sm);
+  --print: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27200%27%20height%3D%2756%27%3E%3Cg%20fill%3D%27%23c9cbf8%27%20font-family%3D%27Georgia%2CTimes%20New%20Roman%2Cserif%27%20font-size%3D%2716%27%20font-weight%3D%27600%27%20text-anchor%3D%27middle%27%3E%3Ctext%20x%3D%2720%27%20y%3D%2720%27%3E%E0%A7%B3%3C%2Ftext%3E%3Ctext%20x%3D%2760%27%20y%3D%2720%27%3E%24%3C%2Ftext%3E%3Ctext%20x%3D%27100%27%20y%3D%2720%27%3E%E2%82%AC%3C%2Ftext%3E%3Ctext%20x%3D%27140%27%20y%3D%2720%27%3E%C2%A3%3C%2Ftext%3E%3Ctext%20x%3D%27180%27%20y%3D%2720%27%3E%C2%A5%3C%2Ftext%3E%3Ctext%20x%3D%270%27%20y%3D%2748%27%3E%E2%82%AC%3C%2Ftext%3E%3Ctext%20x%3D%2740%27%20y%3D%2748%27%3E%C2%A3%3C%2Ftext%3E%3Ctext%20x%3D%2780%27%20y%3D%2748%27%3E%C2%A5%3C%2Ftext%3E%3Ctext%20x%3D%27120%27%20y%3D%2748%27%3E%E0%A7%B3%3C%2Ftext%3E%3Ctext%20x%3D%27160%27%20y%3D%2748%27%3E%24%3C%2Ftext%3E%3Ctext%20x%3D%27200%27%20y%3D%2748%27%3E%E2%82%AC%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+  --print-opacity: .10;
+  --scrim: rgba(0,0,0,.6);
 }
 
 * { box-sizing: border-box; }
@@ -125,7 +193,8 @@ html, body, #root { height: 100%; }
 body {
   margin: 0;
   font-family: var(--font);
-  font-size: 14px;
+  font-feature-settings: "cv11";
+  font-size: var(--fs-md);
   line-height: 1.5;
   color: var(--text-primary);
   background: var(--page);
@@ -135,14 +204,45 @@ body {
 img { max-width: 100%; }
 [hidden] { display: none !important; }
 
-button, input, select { font: inherit; color: inherit; }
+button, input, select, textarea { font: inherit; color: inherit; }
+
+/* Form fields share one look everywhere, so a page only styles layout. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]),
+select, textarea {
+  background: var(--surface-1);
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-sm);
+  padding: 0 10px;
+  min-height: var(--control-h);
+  font-size: var(--fs-base);
+  color: var(--text-primary);
+  transition: border-color .12s ease, box-shadow .12s ease;
+}
+textarea { padding: 8px 10px; }
+input:hover:not(:disabled), select:hover:not(:disabled), textarea:hover:not(:disabled) {
+  border-color: var(--text-muted);
+}
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+input:disabled, select:disabled, textarea:disabled {
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
+::placeholder { color: var(--text-muted); }
+
+a { color: var(--accent); }
 
 /* Numbers that align vertically get tabular figures; hero figures keep
  * proportional ones, where equal-width digits read loose. */
 .tnum { font-variant-numeric: tabular-nums; }
 
 :focus-visible {
-  outline: 2px solid var(--series-1);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -162,72 +262,88 @@ button, input, select { font: inherit; color: inherit; }
   }
 }
 
-/* Masthead: the sticky header that holds the filters, printed with a faint,
- * evenly spaced grid of currency symbols (taka, dollar, euro, pound, yen) in
- * brick rows, like a cash-wrapper print. Faint enough that the filters stay
- * the only thing you read. */
-.masthead {
-  background-color: var(--surface-2);
-  background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27200%27%20height%3D%2756%27%3E%3Cg%20fill%3D%27%230b0b0b%27%20fill-opacity%3D%270.08%27%20font-family%3D%27Georgia%2CTimes%20New%20Roman%2Cserif%27%20font-size%3D%2714%27%20text-anchor%3D%27middle%27%3E%3Ctext%20x%3D%2720%27%20y%3D%2720%27%3E%E0%A7%B3%3C%2Ftext%3E%3Ctext%20x%3D%2760%27%20y%3D%2720%27%3E%24%3C%2Ftext%3E%3Ctext%20x%3D%27100%27%20y%3D%2720%27%3E%E2%82%AC%3C%2Ftext%3E%3Ctext%20x%3D%27140%27%20y%3D%2720%27%3E%C2%A3%3C%2Ftext%3E%3Ctext%20x%3D%27180%27%20y%3D%2720%27%3E%C2%A5%3C%2Ftext%3E%3Ctext%20x%3D%270%27%20y%3D%2748%27%3E%E2%82%AC%3C%2Ftext%3E%3Ctext%20x%3D%2740%27%20y%3D%2748%27%3E%C2%A3%3C%2Ftext%3E%3Ctext%20x%3D%2780%27%20y%3D%2748%27%3E%C2%A5%3C%2Ftext%3E%3Ctext%20x%3D%27120%27%20y%3D%2748%27%3E%E0%A7%B3%3C%2Ftext%3E%3Ctext%20x%3D%27160%27%20y%3D%2748%27%3E%24%3C%2Ftext%3E%3Ctext%20x%3D%27200%27%20y%3D%2748%27%3E%E2%82%AC%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+/* -- Brand ---------------------------------------------------------------- */
+
+/* The wordmark has a light and a dark cut; show whichever matches the theme,
+ * by the same rules as the tokens, so there is no flash on load. */
+.logo-dark { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .logo-light { display: none; }
+  :root:not([data-theme="light"]) .logo-dark { display: block; }
+}
+:root[data-theme="dark"] .logo-light { display: none; }
+:root[data-theme="dark"] .logo-dark { display: block; }
+
+/* Top bar: printed with a faint brick grid of currency symbols (taka, dollar,
+ * euro, pound, yen), like a cash wrapper. It fades out towards the middle so
+ * it reads as texture at the edges and never sits behind the controls. */
+.masthead { position: relative; background: var(--chrome); }
+.masthead::before {
+  content: "";
+  position: absolute; inset: 0;
+  background-image: var(--print);
   background-size: 200px 56px;
+  opacity: var(--print-opacity);
+  /* Full strength at the edges, easing to about a third behind the middle,
+   * so the print is always there without competing with the controls. */
+  -webkit-mask-image: linear-gradient(90deg, #000 0, rgba(0,0,0,.35) 40%, rgba(0,0,0,.35) 60%, #000 100%);
+          mask-image: linear-gradient(90deg, #000 0, rgba(0,0,0,.35) 40%, rgba(0,0,0,.35) 60%, #000 100%);
+  pointer-events: none;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .masthead {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27200%27%20height%3D%2756%27%3E%3Cg%20fill%3D%27%23ffffff%27%20fill-opacity%3D%270.07%27%20font-family%3D%27Georgia%2CTimes%20New%20Roman%2Cserif%27%20font-size%3D%2714%27%20text-anchor%3D%27middle%27%3E%3Ctext%20x%3D%2720%27%20y%3D%2720%27%3E%E0%A7%B3%3C%2Ftext%3E%3Ctext%20x%3D%2760%27%20y%3D%2720%27%3E%24%3C%2Ftext%3E%3Ctext%20x%3D%27100%27%20y%3D%2720%27%3E%E2%82%AC%3C%2Ftext%3E%3Ctext%20x%3D%27140%27%20y%3D%2720%27%3E%C2%A3%3C%2Ftext%3E%3Ctext%20x%3D%27180%27%20y%3D%2720%27%3E%C2%A5%3C%2Ftext%3E%3Ctext%20x%3D%270%27%20y%3D%2748%27%3E%E2%82%AC%3C%2Ftext%3E%3Ctext%20x%3D%2740%27%20y%3D%2748%27%3E%C2%A3%3C%2Ftext%3E%3Ctext%20x%3D%2780%27%20y%3D%2748%27%3E%C2%A5%3C%2Ftext%3E%3Ctext%20x%3D%27120%27%20y%3D%2748%27%3E%E0%A7%B3%3C%2Ftext%3E%3Ctext%20x%3D%27160%27%20y%3D%2748%27%3E%24%3C%2Ftext%3E%3Ctext%20x%3D%27200%27%20y%3D%2748%27%3E%E2%82%AC%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fsvg%3E");
-  }
+/* The filter panel is part of the header: tint it rather than paint over the
+ * print, so the print runs behind the fields too. Fields keep their solid
+ * surface, so what you read and type stays on plain ground. */
+.masthead .filter-panel {
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
 }
-:root[data-theme="dark"] .masthead {
-  background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27200%27%20height%3D%2756%27%3E%3Cg%20fill%3D%27%23ffffff%27%20fill-opacity%3D%270.07%27%20font-family%3D%27Georgia%2CTimes%20New%20Roman%2Cserif%27%20font-size%3D%2714%27%20text-anchor%3D%27middle%27%3E%3Ctext%20x%3D%2720%27%20y%3D%2720%27%3E%E0%A7%B3%3C%2Ftext%3E%3Ctext%20x%3D%2760%27%20y%3D%2720%27%3E%24%3C%2Ftext%3E%3Ctext%20x%3D%27100%27%20y%3D%2720%27%3E%E2%82%AC%3C%2Ftext%3E%3Ctext%20x%3D%27140%27%20y%3D%2720%27%3E%C2%A3%3C%2Ftext%3E%3Ctext%20x%3D%27180%27%20y%3D%2720%27%3E%C2%A5%3C%2Ftext%3E%3Ctext%20x%3D%270%27%20y%3D%2748%27%3E%E2%82%AC%3C%2Ftext%3E%3Ctext%20x%3D%2740%27%20y%3D%2748%27%3E%C2%A3%3C%2Ftext%3E%3Ctext%20x%3D%2780%27%20y%3D%2748%27%3E%C2%A5%3C%2Ftext%3E%3Ctext%20x%3D%27120%27%20y%3D%2748%27%3E%E0%A7%B3%3C%2Ftext%3E%3Ctext%20x%3D%27160%27%20y%3D%2748%27%3E%24%3C%2Ftext%3E%3Ctext%20x%3D%27200%27%20y%3D%2748%27%3E%E2%82%AC%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fsvg%3E");
-}
+.masthead > * { position: relative; }
 
-/* Canvas: the grey ground behind the cards, below the masthead.
- *
- * Anything sitting straight on the grey (the freshness line, section
- * headings, loose labels and buttons) takes light ink. Anything that paints
- * its own card surface gets the theme's ink back, so cards, tiles, inputs
- * and buttons read exactly as they do on the plain page.
- *
- * The theme's ink is captured on :root first, where it resolves against the
- * active light / dark values, and inherited from there as a fixed colour --
- * which is what lets a card inside the canvas restore it. */
-:root {
-  --ink-primary:   var(--text-primary);
-  --ink-secondary: var(--text-secondary);
-  --ink-muted:     var(--text-muted);
-  --ink-border:    var(--border);
-  --ink-border-strong: var(--border-strong);
-  --ink-good:      var(--status-good);
-  --ink-warning:   var(--status-warning);
-  --ink-critical:  var(--status-critical);
+/* -- Navigation ----------------------------------------------------------- */
 
-  --canvas-bg:     #80858c;  /* mid grey */
+.nav-item {
+  position: relative;
+  display: flex; align-items: center; gap: 10px;
+  height: 36px; padding: 0 10px; margin-bottom: 2px;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-base); font-weight: 500;
+  color: var(--text-secondary); text-decoration: none;
+  white-space: nowrap; overflow: hidden;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --canvas-bg: #2e3035; }
+.nav-item:hover { background: var(--surface-2); color: var(--text-primary); }
+.nav-item[aria-current="page"] {
+  background: var(--accent-soft); color: var(--accent); font-weight: 600;
 }
-:root[data-theme="dark"] { --canvas-bg: #2e3035; }
+.nav-item[aria-current="page"]::before {
+  content: ""; position: absolute; left: 0; top: 8px; bottom: 8px;
+  width: 3px; border-radius: 0 3px 3px 0; background: var(--accent);
+}
+.nav-item svg { flex-shrink: 0; }
+.rail .nav-item { justify-content: center; padding: 0; }
 
-.canvas {
-  background: var(--canvas-bg);
-  --text-primary:    #ffffff;
-  --text-secondary:  rgba(255,255,255,0.94);
-  --text-muted:      rgba(255,255,255,0.90);
-  --border:          rgba(255,255,255,0.22);
-  --border-strong:   rgba(255,255,255,0.36);
-  --status-good:     #9af0ae;
-  --status-warning:  #ffd98a;
-  --status-critical: #ffb8b8;
+/* Rows a click acts on get a hover, so the affordance is visible. */
+tr.clickable:hover td { background: var(--surface-2); }
+
+.hover-lift { transition: background .12s ease, border-color .12s ease, color .12s ease; }
+
+/* -- Buttons ---------------------------------------------------------------
+ * Variants live here, not inline, so hover and focus can be expressed. */
+.btn {
+  border: 1px solid transparent; cursor: pointer;
+  transition: background .12s ease, border-color .12s ease, color .12s ease;
 }
-/* Card surfaces inside the canvas: restore the theme's ink. */
-.canvas [style*="var(--surface-1)"],
-.canvas [style*="var(--surface-2)"],
-.canvas [style*="var(--surface-sunken)"] {
-  --text-primary:    var(--ink-primary);
-  --text-secondary:  var(--ink-secondary);
-  --text-muted:      var(--ink-muted);
-  --border:          var(--ink-border);
-  --border-strong:   var(--ink-border-strong);
-  --status-good:     var(--ink-good);
-  --status-warning:  var(--ink-warning);
-  --status-critical: var(--ink-critical);
+.btn:disabled { cursor: not-allowed; opacity: .5; }
+.btn-secondary {
+  background: var(--surface-1); color: var(--text-secondary);
+  border-color: var(--border-strong);
+}
+.btn-secondary:hover:not(:disabled) { background: var(--surface-2); color: var(--text-primary); }
+.btn-primary { background: var(--accent-solid); color: #fff; }
+.btn-primary:hover:not(:disabled) { background: var(--accent-solid-hover); }
+.btn-danger { background: var(--status-critical); color: #fff; }
+.btn-danger:hover:not(:disabled) { filter: brightness(.92); }
+.btn-ghost { background: transparent; color: var(--text-secondary); }
+.btn-ghost:hover:not(:disabled) { background: var(--surface-2); color: var(--text-primary); }
+.btn-active {
+  background: var(--accent-soft); color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
 }

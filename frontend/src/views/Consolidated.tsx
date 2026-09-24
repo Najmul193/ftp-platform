@@ -109,9 +109,7 @@ export default function Consolidated() {
                 <select
                   value={effective ?? ""}
                   onChange={(e) => pick(e.target.value || null)}
-                  style={{ background: "var(--surface-1)", borderRadius: 6,
-                           border: "1px solid var(--border-strong)",
-                           padding: "3px 8px", fontSize: 11.5 }}>
+                  style={{ minHeight: 28, fontSize: "var(--fs-sm)" }}>
                   <option value="">Full window ({availableDates.length} dates)</option>
                   {availableDates.slice().reverse().map((d) => (
                     <option key={d} value={d}>
@@ -183,7 +181,7 @@ export default function Consolidated() {
                    render: (r) => money(r.liability_ftp_profit), value: (r) => r.liability_ftp_profit },
                  { key: "src", label: "ROI source",
                    render: (r) => (
-                     <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                     <span style={{ fontSize: "var(--fs-xs)", color: "var(--text-muted)" }}>
                        {r.roi_source === "BANK_PROVIDED" ? "bank" : "derived"}
                      </span>
                    ),
@@ -192,7 +190,7 @@ export default function Consolidated() {
 
         <div style={{ display: "flex", justifyContent: "space-between",
                       alignItems: "center", marginTop: 10 }}>
-          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+          <span style={{ fontSize: "var(--fs-sm)", color: "var(--text-muted)" }}>
             {offset + 1}–{Math.min(offset + PAGE, total)} of {total.toLocaleString()}
           </span>
           <div style={{ display: "flex", gap: 6 }}>
