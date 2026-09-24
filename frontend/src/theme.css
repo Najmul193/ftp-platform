@@ -83,7 +83,6 @@
   --scrim:     rgba(16,24,40,.45);
   --art-contour: url(/canvas-contour-light.svg);
   --art-dots:    url(/canvas-dots-light.svg);
-  --art-sprinkle: url(/canvas-sprinkle-light.svg);
 
   /* Scale */
   --radius:    12px;
@@ -146,7 +145,6 @@
   --scrim: rgba(0,0,0,.6);
   --art-contour: url(/canvas-contour-dark.svg);
   --art-dots:    url(/canvas-dots-dark.svg);
-  --art-sprinkle: url(/canvas-sprinkle-dark.svg);
   }
 }
 :root[data-theme="dark"] {
@@ -192,7 +190,6 @@
   --scrim: rgba(0,0,0,.6);
   --art-contour: url(/canvas-contour-dark.svg);
   --art-dots:    url(/canvas-dots-dark.svg);
-  --art-sprinkle: url(/canvas-sprinkle-dark.svg);
 }
 
 * { box-sizing: border-box; }
@@ -315,18 +312,14 @@ a { color: var(--accent); }
  * art can never paint over the sidebar. iOS ignores `fixed` and scrolls it. */
 .canvas-art {
   background:
-    /* indigo dots beside the grain, over its left edge, high enough to show
-     * in the page-title band; listed first so they sit on top of the lines */
-    var(--art-sprinkle) right 400px top 100px / 340px auto no-repeat fixed,
-    var(--art-contour) right -140px top 40px / 780px auto no-repeat fixed,
+    var(--art-contour) right -140px top -30px / 780px auto no-repeat fixed,
     var(--art-dots) left calc(var(--nav-w, 0px) - 90px) bottom -50px / 600px auto no-repeat fixed,
     var(--page);
 }
 @media (max-width: 720px) {
   .canvas-art {
     background:
-      var(--art-sprinkle) right 200px top 90px / 200px auto no-repeat fixed,
-      var(--art-contour) right -160px top 60px / 460px auto no-repeat fixed,
+      var(--art-contour) right -160px top 20px / 460px auto no-repeat fixed,
       var(--art-dots) left -70px bottom -40px / 360px auto no-repeat fixed,
       var(--page);
   }
