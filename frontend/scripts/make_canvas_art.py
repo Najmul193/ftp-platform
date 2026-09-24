@@ -118,6 +118,31 @@ def dots(rng, colour, opacity, w=600, h=380):
     return svg(w, h, f'<g opacity="{opacity}">{dot_rows}{rest}</g>', clip)
 
 
+def sprinkle(rng, colour, opacity, w=340, h=230):
+    """A patch of dots that sits beside the contour grain in the same ink.
+
+    No hard edge: dots thin out and shrink towards an irregular border, so the
+    patch dissolves into the canvas and into the grain it overlaps rather than
+    stopping at an outline."""
+    cx, cy = w / 2, h / 2
+    ph1, ph2 = rng.uniform(0, 6.3), rng.uniform(0, 6.3)
+    out = []
+    for row, y0 in enumerate(range(4, h, 7)):
+        x = rng.uniform(0, 5)
+        while x < w:
+            y = y0 + 1.3 * math.sin(x * 0.024 + row * 0.35)
+            a = math.atan2((y - cy) / h, (x - cx) / w)
+            # Organic border: the radius wobbles with angle.
+            edge = 1 + 0.16 * math.sin(3 * a + ph1) + 0.08 * math.sin(5 * a + ph2)
+            d = math.hypot((x - cx) / (w / 2), (y - cy) / (h / 2)) / edge
+            keep = max(0.0, 1 - d * d) ** 1.4          # dense core, feathered rim
+            if rng.random() < keep:
+                r = 0.7 + 0.95 * (1 - min(d, 1)) + rng.uniform(-0.15, 0.15)
+                out.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r:.2f}"/>')
+            x += rng.uniform(4.5, 6.5)
+    return svg(w, h, f'<g fill="{colour}" opacity="{opacity}">{"".join(out)}</g>')
+
+
 def main():
     for theme, inks in INK.items():
         # Same seed per shape in both themes, so light and dark are one drawing.
@@ -125,6 +150,11 @@ def main():
             contour(random.Random(7), *inks["contour"]))
         (OUT / f"canvas-dots-{theme}.svg").write_text(
             dots(random.Random(11), *inks["dots"]))
+        # Same indigo as the grain beside it, a touch stronger since dots
+        # carry less ink than lines.
+        colour, opacity = inks["contour"]
+        (OUT / f"canvas-sprinkle-{theme}.svg").write_text(
+            sprinkle(random.Random(23), colour, round(opacity * 1.25, 3)))
     for p in sorted(OUT.glob("canvas-*.svg")):
         print(f"{p.name}: {p.stat().st_size / 1024:.1f} KB")
 
