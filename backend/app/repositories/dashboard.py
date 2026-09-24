@@ -253,6 +253,7 @@ class DashboardRepo:
         data = {m: (getattr(row, m) or ZERO) for m in _MEASURES}
         data["account_count"] = row.account_count or 0
         data["negative_ftp_count"] = row.negative_ftp_count or 0
+        balance_pd = row.total_balance_pd or ZERO
 
         # Distinct counts need their own pass -- they are not additive.
         dstmt = _apply_filters(
@@ -267,23 +268,23 @@ class DashboardRepo:
         )
         branches, days = self.s.execute(dstmt).one()
 
+        # The filtered scope, like every other measure here: the bare
+        # `self.scope` ignored branch/division/district/category filters, so a
+        # one-branch view counted products across the whole book.
         pmodel = AggDailyBranchProduct
         pstmt = _apply_filters(
             _apply_scope(select(func.count(func.distinct(pmodel.product_id))),
-                         pmodel, self.scope),
+                         pmodel, self._scope_for(f)),
             pmodel, f,
         )
         products = self.s.scalar(pstmt) or 0
 
-        total_balance = data["total_balance"] or ZERO
         net = data["net_ftp_profit"] or ZERO
-        # Annualised. Numerator and denominator accumulate over the same days,
-        # so the ratio is the average daily rate; x365 annualises it. It must
-        # NOT additionally be divided by day_count.
-        ratio = (
-            (net / total_balance * Decimal(365) * Decimal(100)).quantize(RATE_Q)
-            if total_balance else ZERO
-        )
+        # Annualised: income over balance-days each divided by that day's
+        # income divisor (36,500 ACT/365, 36,000 ACT/360). On a single basis
+        # this is net / balance x 36,500, i.e. x365 x100 of the average daily
+        # rate. It must NOT additionally be divided by day_count.
+        ratio = (net / balance_pd).quantize(RATE_Q) if balance_pd else ZERO
 
         return {
             **data,
@@ -352,6 +353,7 @@ class DashboardRepo:
         r = self.s.execute(select(*_fact_sums()).where(where)).one()
         data = self._row_to_measures(r)
         data.pop("avg_ftp_rate", None)
+        balance_pd = _d_or_zero(r.total_balance_pd)
 
         branches, days = self.s.execute(
             select(func.count(func.distinct(F.branch_id)),
@@ -360,16 +362,15 @@ class DashboardRepo:
         products = self.s.scalar(
             select(func.count(func.distinct(F.product_id))).where(where)) or 0
 
-        total_balance = data["total_balance"] or ZERO
         net = data["net_ftp_profit"] or ZERO
         return {
             **data,
             "branch_count": branches or 0,
             "product_count": products,
             "day_count": days or 0,
+            # Same basis-aware annualisation as the aggregate path.
             "ftp_over_balance_pct": (
-                (net / total_balance * Decimal(365) * Decimal(100)).quantize(RATE_Q)
-                if total_balance else ZERO
+                (net / balance_pd).quantize(RATE_Q) if balance_pd else ZERO
             ),
         }
 
@@ -607,7 +608,10 @@ class DashboardRepo:
         where = and_(*conds)
         total = self.s.scalar(select(func.count()).select_from(F).where(where)) or 0
 
-        col = getattr(F, order, F.ftp_income)
+        # Resolved against the table's columns only. `getattr` on the model
+        # also reached ORM internals (`metadata`, `registry`, ...), and sorting
+        # by one of those raised a 500.
+        col = F.__table__.c.get(order, F.__table__.c.ftp_income)
         rows = self.s.scalars(
             select(F).where(where)
             # A full key as tie-breaker: without the date and branch, equal

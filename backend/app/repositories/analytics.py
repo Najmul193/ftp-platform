@@ -1599,9 +1599,22 @@ class AnalyticsRepo:
                 .where(where).group_by(F.product_code)
             ).all()
         }
+        if not medians:
+            # Nothing in the window. The medians table would be a placeholder
+            # row whose NULL PostgreSQL types as text, and `ftp_rate < text`
+            # failed -- taking the whole Daily page down with it.
+            return {
+                "accounts_below_median": 0,
+                "balance_below_median": ZERO.quantize(MONEY_Q),
+                "opportunity": ZERO.quantize(MONEY_Q),
+                "current_ftp_profit": ZERO.quantize(MONEY_Q),
+                "uplift_pct": None,
+                "by_product": [],
+                "top_accounts": [],
+            }
         med = values(
             column("pc", String), column("median_rate", Float), name="med",
-        ).data(list(medians.items()) or [("", None)])
+        ).data(list(medians.items()))
 
         uplift = (med.c.median_rate - F.ftp_rate) * F.balance / F.day_divisor
         below = F.ftp_rate < med.c.median_rate

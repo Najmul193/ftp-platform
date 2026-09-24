@@ -5,13 +5,14 @@ from __future__ import annotations
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.deps import DbDep, ScopeDep, require
 from app.api.schemas import (
     AccountRow, HeatCell, KpiResponse, Page, SeriesPoint,
 )
 from app.domain.types import Side
+from app.models import FtpCalculationResult
 from app.repositories.dashboard import DashboardRepo, Filters
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -96,10 +97,15 @@ def heatmap(db: DbDep, scope: ScopeDep, f: FiltersDep):
             dependencies=[Depends(require("ACCOUNT_DRILLDOWN"))])
 def accounts(
     db: DbDep, scope: ScopeDep, f: FiltersDep,
-    limit: int = Query(50, le=500), offset: int = 0,
+    limit: int = Query(50, ge=0, le=500), offset: int = Query(0, ge=0),
     order: str = "ftp_income", desc: bool = True,
 ) -> Page:
     """Facts, always bounded by scope, a date range and pagination."""
+    sortable = FtpCalculationResult.__table__.c.keys()
+    if order not in sortable:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"cannot sort by {order!r}; use one of: {', '.join(sorted(sortable))}")
     rows, total = DashboardRepo(db, scope).accounts(
         f, limit=limit, offset=offset, order=order, desc=desc
     )

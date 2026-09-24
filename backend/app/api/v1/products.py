@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -106,7 +106,7 @@ def _svc(db, user: UserDep) -> ProductService:
 
 @router.get("/rates/history", response_model=list[ProductRateVersionOut],
             dependencies=[Depends(require("CONFIG_RATE_VIEW"))])
-def all_rate_history(db: DbDep, limit: int = 500):
+def all_rate_history(db: DbDep, limit: int = Query(500, ge=1, le=5000)):
     """Every product rate version, including superseded ones."""
     return ProductService(db).rate_history(limit=limit)
 
@@ -114,7 +114,8 @@ def all_rate_history(db: DbDep, limit: int = 500):
 @router.get("/{product_code}/rates/history",
             response_model=list[ProductRateVersionOut],
             dependencies=[Depends(require("CONFIG_RATE_VIEW"))])
-def product_rate_history(product_code: str, db: DbDep, limit: int = 500):
+def product_rate_history(product_code: str, db: DbDep,
+                         limit: int = Query(500, ge=1, le=5000)):
     """One product's rate versions, newest first."""
     try:
         return ProductService(db).rate_history(product_code, limit=limit)

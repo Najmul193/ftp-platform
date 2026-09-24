@@ -16,7 +16,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from app.api.deps import CurrentUser, DbDep, UserDep, require
@@ -131,7 +131,7 @@ def current_global(db: DbDep, user: UserDep, on: date | None = None):
 
 @router.get("/global/history", response_model=list[GlobalConfigOut],
             dependencies=[_view])
-def global_history(db: DbDep, user: UserDep, limit: int = 100):
+def global_history(db: DbDep, user: UserDep, limit: int = Query(100, ge=1, le=1000)):
     """Every version, newest first -- the record of what priced when."""
     svc = _svc(db, user)
     return [_out(svc, cfg) for cfg in svc.history(limit)]

@@ -151,7 +151,7 @@ def upload(
 
 @router.get("", response_model=list[BatchOut],
             dependencies=[Depends(require("UPLOAD_VIEW"))])
-def list_batches(db: DbDep, limit: int = Query(50, le=200),
+def list_batches(db: DbDep, limit: int = Query(50, ge=1, le=200),
                  status_filter: str | None = None):
     stmt = select(UploadBatch).order_by(UploadBatch.uploaded_at.desc()).limit(limit)
     if status_filter:
@@ -171,7 +171,7 @@ def get_batch(batch_ref: str, db: DbDep):
 @router.get("/{batch_ref}/exceptions", response_model=list[ExceptionOut],
             dependencies=[Depends(require("UPLOAD_VIEW"))])
 def batch_exceptions(batch_ref: str, db: DbDep, severity: str | None = None,
-                     limit: int = Query(500, le=5000)):
+                     limit: int = Query(500, ge=1, le=5000)):
     batch = db.scalar(select(UploadBatch).filter_by(batch_ref=batch_ref))
     if batch is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"no batch {batch_ref}")
