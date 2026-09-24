@@ -361,21 +361,24 @@ export default function BasicOverview() {
     </div>
   );
 
-  // One screen, nothing scrolls. Everything is a multiple of `avail`, so the
-  // page reflows on resize instead of overflowing. Top row keeps its natural
-  // height (~104px); the chart rows split the remainder.
+  // One screen, nothing scrolls -- while the screen can hold it. Everything is
+  // a multiple of `avail`, so the page reflows on resize. Top row keeps its
+  // natural height (~104px); the chart rows split the remainder.
+  //
+  // Each row is a *minimum*: when a card's header wraps (the branch cards carry
+  // the rank filters) the row grows to keep the chart readable and the page
+  // scrolls, rather than the chart being squeezed to a sliver. When the chart
+  // area is too narrow for two readable columns, the charts stack.
   const topRowHeight = 104;
   const mainAreaHeight = Math.max(240, avail - topRowHeight - 12);
   const chartRowHeight = (mainAreaHeight - 12) / 2;
-  // Card header (now carries the rank filters, so allow for a wrapped line)
-  // + body padding leave this much for the canvas.
-  const chartHeight = Math.max(120, Math.round(chartRowHeight - 78));
+  const oneColumn = pageW > 0 && pageW - leftWidth - 14 < TWO_COLUMN_MIN;
 
   return (
     <div ref={pageRef} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {/* ---- the fixed no-scroll block ----------------------------------- */}
-      <div style={{ height: avail, display: "flex", flexDirection: "column",
-                    gap: 12, minHeight: 0, overflow: "hidden" }}>
+      <div style={{ minHeight: avail, display: "flex", flexDirection: "column",
+                    gap: 12 }}>
         {topStats}
 
         <div style={{ flex: 1, minHeight: 0, display: "flex", gap: 14 }}>
@@ -386,9 +389,10 @@ export default function BasicOverview() {
         </div>
 
           {/* Right: the four charts in a 2x2 grid that fills the rest */}
-          <div style={{ flex: 1, minWidth: 0,
-                        display: "grid", gridTemplateRows: `repeat(2, ${chartRowHeight}px)`,
-                        gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div style={{ flex: 1, minWidth: 0, display: "grid", gap: 12,
+                        gridTemplateRows:
+                          `repeat(${oneColumn ? 4 : 2}, minmax(${chartRowHeight}px, auto))`,
+                        gridTemplateColumns: oneColumn ? "1fr" : "1fr 1fr" }}>
             <Card expandable title="Branch FTP profitability"
                   subtitle="Asset, liability and net FTP profit per branch"
                   actions={<RankFilter
@@ -401,10 +405,10 @@ export default function BasicOverview() {
                     unit="branches" />}>
               {!hasBranchData || branchSlice.length === 0
                 ? <Empty title="No branches in this slice" />
-                : <div style={{ height: "100%", minHeight: 0, overflow: "hidden" }}>
-                    <Chart option={branchOption} height={chartHeight} loading={branches.loading}
+                : <ChartFill>
+                    <Chart option={branchOption} height="100%" loading={branches.loading}
                            ariaLabel="Branch FTP profitability by side" />
-                  </div>}
+                  </ChartFill>}
             </Card>
 
             <Card expandable title="Asset vs Liability FTP"
@@ -419,20 +423,20 @@ export default function BasicOverview() {
                     unit="branches" />}>
               {!hasBranchData || branchSlice.length === 0
                 ? <Empty title="No branches in this slice" />
-                : <div style={{ height: "100%", minHeight: 0, overflow: "hidden" }}>
-                    <Chart option={sideOption} height={chartHeight} loading={branches.loading}
+                : <ChartFill>
+                    <Chart option={sideOption} height="100%" loading={branches.loading}
                            ariaLabel="Asset versus liability FTP profit by branch" />
-                  </div>}
+                  </ChartFill>}
             </Card>
 
             <Card expandable title="Daily FTP profit trend"
                   subtitle="Net FTP profit per day in the window">
               {points.length === 0
                 ? <Empty title="No data in this window" hint="Widen the date range or clear a filter." />
-                : <div style={{ height: "100%", minHeight: 0, overflow: "hidden" }}>
-                    <Chart option={trendOption} height={chartHeight} loading={trend.loading}
+                : <ChartFill>
+                    <Chart option={trendOption} height="100%" loading={trend.loading}
                            ariaLabel="Daily net FTP profit trend" />
-                  </div>}
+                  </ChartFill>}
             </Card>
 
             <Card expandable title="Product FTP profit"
@@ -444,10 +448,10 @@ export default function BasicOverview() {
                     unit="products" />}>
               {productSlice.length === 0
                 ? <Empty title="No products in this slice" />
-                : <div style={{ height: "100%", minHeight: 0, overflow: "hidden" }}>
-                    <Chart option={productOption} height={chartHeight} loading={products.loading}
+                : <ChartFill>
+                    <Chart option={productOption} height="100%" loading={products.loading}
                            ariaLabel="Net FTP profit by product" />
-                  </div>}
+                  </ChartFill>}
             </Card>
           </div>
         </div>
@@ -508,6 +512,24 @@ export default function BasicOverview() {
           </Grid>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Fills whatever the card body has left once its header is laid out.
+ *
+ * The header carries the rank filters and wraps onto more lines as the page
+ * narrows, so a chart sized to a precomputed pixel height ran out of the
+ * bottom of its card. The chart sits in an absolutely positioned layer
+ * instead, so its size follows the space the card has left and ECharts resizes
+ * to match. The floor keeps it readable: below it the grid row grows. */
+const MIN_CHART_HEIGHT = 160;
+/** Narrower than this, two charts side by side are too cramped to read. */
+const TWO_COLUMN_MIN = 640;
+function ChartFill({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ position: "relative", height: "100%", minHeight: MIN_CHART_HEIGHT }}>
+      <div style={{ position: "absolute", inset: 0 }}>{children}</div>
     </div>
   );
 }
